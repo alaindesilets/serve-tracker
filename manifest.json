@@ -1,0 +1,11 @@
+{
+  "name": "Serve Tracker",
+  "short_name": "Serve Tracker",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
