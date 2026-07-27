@@ -344,7 +344,6 @@ const translations = {
     pts: 'pts',
     exportBtn: 'Exporter',
     importBtn: 'Importer',
-    exportedToast: 'Fichier de sauvegarde téléchargé.',
     importConfirm: 'Remplacer les données actuelles par celles de ce fichier ?',
     importSuccess: 'Données restaurées avec succès.',
     importError: "Ce fichier n'est pas une sauvegarde valide.",
@@ -402,7 +401,6 @@ const translations = {
     pts: 'pts',
     exportBtn: 'Export',
     importBtn: 'Import',
-    exportedToast: 'Backup file downloaded.',
     importConfirm: 'Replace current data with this file\'s data?',
     importSuccess: 'Data restored successfully.',
     importError: 'This file is not a valid backup.',
@@ -937,11 +935,16 @@ async function doExport(){
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  await writeBackupToLinkedFile();
-  try{ localStorage.setItem(EXPORT_DATE_KEY, new Date().toISOString()); }catch(e){}
-  hideExportBanner();
-  alert(t('exportedToast'));
+
+  // Deferred a beat so the browser has time to actually start the
+  // download before we revoke the blob URL — revoking too early can
+  // silently cancel a download in some browsers.
+  setTimeout(async () => {
+    URL.revokeObjectURL(url);
+    await writeBackupToLinkedFile();
+    try{ localStorage.setItem(EXPORT_DATE_KEY, new Date().toISOString()); }catch(e){}
+    hideExportBanner();
+  }, 300);
 }
 
 function hideExportBanner(){

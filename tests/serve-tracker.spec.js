@@ -1,0 +1,161 @@
+// @ts-check
+const { test, expect } = require('@playwright/test');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { ServeTrackerManipulator } = require('./serve-tracker-manipulator');
+
+const APP_PATH = 'file://' + path.resolve(__dirname, '..', 'index.html');
+const PAGE_URL = process.env.PAGE_URL || APP_PATH;
+
+/** @type {ServeTrackerManipulator} */
+let app;
+
+test.beforeEach(async ({ page }) => {
+  app = new ServeTrackerManipulator(page);
+  await app.open(PAGE_URL);
+  await app.resetAllData(); // always start from zero counters, empty history
+});
+
+test.describe('initial state', () => {
+  test('loads with all counters at zero', async () => {
+    expect(await app.getTotalPoints()).toBe(0);
+    expect(await app.getFirstServeCount()).toBe(0);
+    expect(await app.getSecondServeCount()).toBe(0);
+    expect(await app.getDoubleFaultCount()).toBe(0);
+  });
+});
+
+test.describe('recording serves', () => {
+  test('each outcome increments its own counter and the total', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    expect(await app.getFirstServeCount()).toBe(1);
+    expect(await app.getTotalPoints()).toBe(1);
+
+    await app.registerSuccessfulSecondServes(1);
+    await app.registerDoubleFaults(1);
+    expect(await app.getTotalPoints()).toBe(3);
+  });
+
+  test('percentages reflect the split between the three outcomes', async () => {
+    // 2 first-serve-in, 1 second-serve-in, 1 double-fault -> 50/25/25
+    await app.registerSuccessfulFirstServes(2);
+    await app.registerSuccessfulSecondServes(1);
+    await app.registerDoubleFaults(1);
+
+    expect(await app.getFirstServePercentage()).toBe(50);
+    expect(await app.getSecondServePercentage()).toBe(25);
+    expect(await app.getDoubleFaultPercentage()).toBe(25);
+  });
+
+  test('counts survive a page reload', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.registerDoubleFaults(1);
+    await app.reload();
+    expect(await app.getTotalPoints()).toBe(2);
+  });
+});
+
+test.describe('ending a practice session', () => {
+  test('declining to save still clears the counters, and keeps no record', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.registerDoubleFaults(1);
+
+    await app.endSessionWithoutSaving();
+    expect(await app.getTotalPoints()).toBe(0);
+
+    await app.openHistory();
+    expect(await app.hasNoSavedSessions()).toBe(true);
+  });
+
+  test('saving archives the session under the given name', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.registerSuccessfulSecondServes(1);
+
+    await app.endSessionAndSave('Practice A');
+    expect(await app.getTotalPoints()).toBe(0); // counters cleared either way
+
+    await app.openHistory();
+    expect(await app.hasSavedSession('Practice A')).toBe(true);
+  });
+
+  test('an empty session resets silently, with no save prompt at all', async () => {
+    const promptAppeared = await app.endSessionAndCheckIfPromptAppeared();
+    expect(promptAppeared).toBe(false);
+  });
+});
+
+test.describe('session history', () => {
+  test('deleting a saved session removes it from the list', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.endSessionAndSave('To delete');
+
+    await app.openHistory();
+    expect(await app.hasSavedSession('To delete')).toBe(true);
+
+    await app.deleteSavedSession('To delete');
+    expect(await app.hasNoSavedSessions()).toBe(true);
+  });
+
+  test('the Trends tab renders a chart once there is history', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.endSessionAndSave('Session 1');
+
+    await app.openHistory();
+    await app.viewTrends();
+    expect(await app.isTrendsChartVisible()).toBe(true);
+  });
+});
+
+test.describe('backing up data', () => {
+  test('Export downloads a JSON file', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.endSessionAndSave('Backed up');
+
+    const download = await app.exportBackup();
+    expect(download.suggestedFilename()).toMatch(/^suivi-service-.*\.json$/);
+  });
+
+  test('Import restores a previously exported backup', async () => {
+    const fixture = {
+      exportedAt: new Date().toISOString(),
+      currentSession: { first: 3, second: 1, fault: 2 },
+      history: [
+        { name: 'Imported session', date: new Date().toISOString(), first: 4, second: 2, fault: 1 },
+      ],
+    };
+    const tmpFile = path.join(os.tmpdir(), 'serve-tracker-fixture.json');
+    fs.writeFileSync(tmpFile, JSON.stringify(fixture));
+
+    await app.importBackup(tmpFile);
+
+    expect(await app.getTotalPoints()).toBe(6); // 3 + 1 + 2
+  });
+});
+
+test.describe('language switching', () => {
+  test('switching to English updates the button labels', async () => {
+    expect(await app.getFirstServeButtonLabel()).toContain('1er service');
+    await app.switchLanguageTo('en');
+    expect(await app.getFirstServeButtonLabel()).toContain('1st serve');
+    expect(await app.getDoubleFaultButtonLabel()).toContain('Double fault');
+  });
+
+  test('the chosen language persists across a reload', async () => {
+    await app.switchLanguageTo('en');
+    await app.reload();
+    expect(await app.getSelectedLanguage()).toBe('en');
+    expect(await app.getFirstServeButtonLabel()).toContain('1st serve');
+  });
+});
+
+test.describe('help panel', () => {
+  test('opens and closes, showing the active language', async () => {
+    await app.openHelp();
+    expect(await app.isHelpOpen()).toBe(true);
+    expect(await app.getHelpText()).toContain('service'); // French by default
+
+    await app.closeHelp();
+    expect(await app.isHelpOpen()).toBe(false);
+  });
+});
