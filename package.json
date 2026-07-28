@@ -1,0 +1,16 @@
+{
+  "name": "serve-tracker-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test --config=tests/playwright.config.js --project=automated",
+    "test:auto": "playwright test --config=tests/playwright.config.js --project=automated",
+    "test:semi": "playwright test --config=tests/playwright.config.js --project=semi-automated",
+    "test:all": "playwright test --config=tests/playwright.config.js",
+    "test:headed": "playwright test --config=tests/playwright.config.js --project=automated --headed",
+    "test:ui": "playwright test --config=tests/playwright.config.js --project=automated --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}

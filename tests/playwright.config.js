@@ -2,16 +2,33 @@
 const { defineConfig, devices } = require('@playwright/test');
 
 // Config lives in tests/ alongside the spec files, so testDir is just '.'.
-// Run it from the project root with:
-//   npx playwright test --config=tests/playwright.config.js
-// (the npm scripts in package.json already do this for you)
+// Two projects, run independently or together:
+//   npm test          -> "automated" only (fast, headless, safe for CI)
+//   npm run test:semi -> "semi-automated" only (headed, asks yes/no in the terminal)
+//   npm run test:all  -> both
 module.exports = defineConfig({
   testDir: '.',
-  fullyParallel: false,     // each test toggles localStorage/IndexedDB — keep sequential
+  fullyParallel: false, // each test toggles localStorage/IndexedDB — keep sequential
+  workers: 1,
   retries: 0,
   reporter: 'list',
-  use: {
-    trace: 'retain-on-failure',
-    ...devices['Desktop Chrome'],
-  },
+  projects: [
+    {
+      name: 'automated',
+      testIgnore: '**/semi-automated/**',
+      use: {
+        trace: 'retain-on-failure',
+        ...devices['Desktop Chrome'],
+      },
+    },
+    {
+      name: 'semi-automated',
+      testDir: './semi-automated',
+      timeout: 5 * 60 * 1000, // a human needs time to look and answer
+      use: {
+        headless: false, // the whole point is to actually look at it
+        ...devices['Desktop Chrome'],
+      },
+    },
+  ],
 });
