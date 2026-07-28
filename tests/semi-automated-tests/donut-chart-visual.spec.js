@@ -21,6 +21,11 @@ const PAGE_URL = process.env.PAGE_URL || APP_PATH;
 const SCREENSHOT_DIR = path.join(__dirname, 'output');
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
+// A PNG here (same basename as the screenshot below) is shown next to the
+// question as a reference. Click it (or the empty placeholder) in the
+// browser prompt to set/replace it from your own machine.
+const EXPECTED_DIR = path.join(__dirname, 'expected');
+
 test.describe('donut chart — visual check', () => {
   test('2 first / 1 second / 1 fault renders as 50% / 25% / 25%, green/yellow/red from the top', async ({ page }) => {
     const app = new ServeTrackerManipulator(page);
@@ -43,7 +48,8 @@ test.describe('donut chart — visual check', () => {
       '1st serve: 50% (green)   2nd serve: 25% (yellow)   Double fault: 25% (red)\n' +
       'Does the chart above match this?';
 
-    const result = await askHuman(page, question);
+    const referenceImagePath = path.join(EXPECTED_DIR, 'donut-50-25-25.png');
+    const result = await askHuman(page, question, referenceImagePath);
     const failureMessage = result.comment
       ? '\n' +
         '='.repeat(60) + '\n' +

@@ -17,6 +17,11 @@ const PAGE_URL = process.env.PAGE_URL || APP_PATH;
 const SCREENSHOT_DIR = path.join(__dirname, 'output');
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
+// A PNG here (same basename as the screenshot below) is shown next to the
+// question as a reference. Click it (or the empty placeholder) in the
+// browser prompt to set/replace it from your own machine.
+const EXPECTED_DIR = path.join(__dirname, 'expected');
+
 test.describe('trends chart — visual check', () => {
   test('3 sessions render as rising 1st-serve / falling 2nd-serve / falling fault lines', async ({ page }) => {
     const app = new ServeTrackerManipulator(page);
@@ -56,7 +61,8 @@ test.describe('trends chart — visual check', () => {
       'Double fault (red): 50% -> 25% -> 0%\n' +
       'Does the chart above match this?';
 
-    const result = await askHuman(page, question);
+    const referenceImagePath = path.join(EXPECTED_DIR, 'trends-rising-first-serve.png');
+    const result = await askHuman(page, question, referenceImagePath);
     const failureMessage = result.comment
       ? '\n' +
         '='.repeat(60) + '\n' +
