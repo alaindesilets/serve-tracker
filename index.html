@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -216,19 +216,19 @@
 <body>
 <div id="app">
   <header>
-    <h1 data-i18n="title">Session de service</h1>
+    <h1 data-i18n="title">Serve session</h1>
     <div style="display:flex; gap:8px; align-items:center;">
       <select id="lang-select"></select>
       <button id="help-btn">?</button>
-      <button id="history-btn" data-i18n="history">Historique</button>
-      <button id="reset-btn" data-i18n="reset">Réinitialiser</button>
+      <button id="history-btn" data-i18n="history">History</button>
+      <button id="reset-btn" data-i18n="reset">Reset</button>
     </div>
   </header>
 
   <div id="export-banner">
-    <span data-i18n="exportReminder">Pense à exporter tes données de temps en temps.</span>
+    <span data-i18n="exportReminder">Consider exporting your data once in a while.</span>
     <div style="display:flex; gap:6px;">
-      <button id="banner-export-btn" data-i18n="exportBtn">Exporter</button>
+      <button id="banner-export-btn" data-i18n="exportBtn">Export</button>
       <button id="banner-dismiss-btn">✕</button>
     </div>
   </div>
@@ -236,8 +236,8 @@
   <div id="help-overlay">
     <div id="help-panel">
       <div id="help-head">
-        <span data-i18n="helpTitle">Aide</span>
-        <button id="help-close" data-i18n="close">Fermer</button>
+        <span data-i18n="helpTitle">Help</span>
+        <button id="help-close" data-i18n="close">Close</button>
       </div>
       <div id="help-body"></div>
     </div>
@@ -246,14 +246,14 @@
   <div id="history-overlay">
     <div id="history-panel">
       <div id="history-head">
-        <span data-i18n="historyTitle">Historique des sessions</span>
-        <button id="history-close" data-i18n="close">Fermer</button>
+        <span data-i18n="historyTitle">Session history</span>
+        <button id="history-close" data-i18n="close">Close</button>
       </div>
       <div id="history-tabs">
-        <button class="hist-tab active" data-view="list" data-i18n="tabList">Liste</button>
-        <button class="hist-tab" data-view="chart" data-i18n="tabChart">Évolution</button>
-        <button id="export-btn" data-i18n="exportBtn">Exporter</button>
-        <button id="import-btn" data-i18n="importBtn">Importer</button>
+        <button class="hist-tab active" data-view="list" data-i18n="tabList">List</button>
+        <button class="hist-tab" data-view="chart" data-i18n="tabChart">Trends</button>
+        <button id="export-btn" data-i18n="exportBtn">Export</button>
+        <button id="import-btn" data-i18n="importBtn">Import</button>
         <input type="file" id="import-file" accept="application/json" style="display:none;">
       </div>
       <div id="link-row"></div>
@@ -261,11 +261,11 @@
       <div id="history-chart-view">
         <canvas id="evo-chart" height="180"></canvas>
         <div id="evo-legend">
-          <span><i style="background:var(--first)"></i><span data-i18n="firstServe">1er service</span></span>
-          <span><i style="background:var(--second)"></i><span data-i18n="secondServe">2e service</span></span>
-          <span><i style="background:var(--fault)"></i><span data-i18n="doubleFault">Double faute</span></span>
+          <span><i style="background:var(--first)"></i><span data-i18n="firstServe">1st serve</span></span>
+          <span><i style="background:var(--second)"></i><span data-i18n="secondServe">2nd serve</span></span>
+          <span><i style="background:var(--fault)"></i><span data-i18n="doubleFault">Double fault</span></span>
         </div>
-        <div id="evo-note" data-i18n="chronoNote">Sessions dans l'ordre chronologique (gauche → droite)</div>
+        <div id="evo-note" data-i18n="chronoNote">Sessions in chronological order (left → right)</div>
       </div>
     </div>
   </div>
@@ -282,33 +282,33 @@
       <div class="leg-row">
         <div class="dot" style="background:var(--first)"></div>
         <div class="leg-text">
-          <div class="leg-label" data-i18n="firstServe">1er service</div>
+          <div class="leg-label" data-i18n="firstServe">1st serve</div>
           <div class="leg-value" id="leg-first">0<span>0%</span></div>
         </div>
       </div>
       <div class="leg-row">
         <div class="dot" style="background:var(--second)"></div>
         <div class="leg-text">
-          <div class="leg-label" data-i18n="secondServe">2e service</div>
+          <div class="leg-label" data-i18n="secondServe">2nd serve</div>
           <div class="leg-value" id="leg-second">0<span>0%</span></div>
         </div>
       </div>
       <div class="leg-row">
         <div class="dot" style="background:var(--fault)"></div>
         <div class="leg-text">
-          <div class="leg-label" data-i18n="doubleFault">Double faute</div>
+          <div class="leg-label" data-i18n="doubleFault">Double fault</div>
           <div class="leg-value" id="leg-fault">0<span>0%</span></div>
         </div>
       </div>
     </div>
   </div>
 
-  <div id="sub-stat"><span data-i18n="secondRateLabel">Taux de réussite au 2e service : </span><b id="second-rate">—</b></div>
+  <div id="sub-stat"><span data-i18n="secondRateLabel">2nd serve conversion rate: </span><b id="second-rate">—</b></div>
 
   <div id="buttons">
-    <button class="serve" id="btn-first"><span data-i18n="firstServe">1er service</span> <span class="count" id="c-first">0</span></button>
-    <button class="serve" id="btn-second"><span data-i18n="secondServe">2e service</span> <span class="count" id="c-second">0</span></button>
-    <button class="serve" id="btn-fault"><span data-i18n="doubleFault">Double faute</span> <span class="count" id="c-fault">0</span></button>
+    <button class="serve" id="btn-first"><span data-i18n="firstServe">1st serve</span> <span class="count" id="c-first">0</span></button>
+    <button class="serve" id="btn-second"><span data-i18n="secondServe">2nd serve</span> <span class="count" id="c-second">0</span></button>
+    <button class="serve" id="btn-fault"><span data-i18n="doubleFault">Double fault</span> <span class="count" id="c-fault">0</span></button>
   </div>
 </div>
 
