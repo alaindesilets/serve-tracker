@@ -3,6 +3,10 @@
 // detail lives here. Tests should never reference an #id or .class —
 // they call these methods instead, named after what a tennis player is
 // actually doing ("register a first serve"), not how the UI is built.
+// It also owns a few assertion helpers (expectSegmentsToBe) for the same
+// reason: the shape of what's being compared is a UI/model detail too.
+
+const { expect } = require('@playwright/test');
 
 class ServeTrackerManipulator {
   /** @param {import('@playwright/test').Page} page */
@@ -74,6 +78,76 @@ class ServeTrackerManipulator {
     const text = await this.page.locator(selector).textContent();
     const match = /^(\d+)%/.exec(text || '');
     return match ? Number(match[1]) : null;
+  }
+
+  // --- donut chart model (no pixels involved) ---------------------------
+
+  /**
+   * Computes what the donut chart *should* show for an arbitrary
+   * {first, second, fault} count, straight from the app's own model
+   * function — no canvas, no pixel reading. Use this to test the chart's
+   * math (percentages, angles, colors) in isolation.
+   */
+  async computeChartSegmentsFor(counts) {
+    return this.page.evaluate((c) => getChartSegments(c), counts);
+  }
+
+  /** Same, but reads whatever the current on-screen session actually is. */
+  async getCurrentChartSegments() {
+    return this.page.evaluate(() => getChartSegments(state));
+  }
+
+  /**
+   * Computes the chart's counts from `expSegments` (so the counts and
+   * the expected result never have to be written twice), then asserts
+   * the model's actual output matches — key, value, and percentage per
+   * segment, in order.
+   * @param {Array<{key: string, value: number, percentage: number}>} expSegments
+   */
+  async expectSegmentsToBe(expSegments) {
+    const counts = { first: 0, second: 0, fault: 0 };
+    expSegments.forEach((s) => { counts[s.key] = s.value; });
+
+    const { segments: actual } = await this.computeChartSegmentsFor(counts);
+
+    expect(actual.map((s) => s.key)).toEqual(expSegments.map((s) => s.key));
+    expect(actual.map((s) => s.value)).toEqual(expSegments.map((s) => s.value));
+    expect(actual.map((s) => s.percentage)).toEqual(expSegments.map((s) => s.percentage));
+  }
+
+  // --- trends chart model (no pixels involved) ---------------------------
+
+  /**
+   * Computes what the Trends chart *should* show for an arbitrary list of
+   * saved sessions (newest-first, same shape as history entries), straight
+   * from the app's own model function — no canvas involved.
+   */
+  async computeEvolutionSeriesFor(historyList) {
+    return this.page.evaluate((list) => getEvolutionSeries(list), historyList);
+  }
+
+  /** Same, but reads whatever history is actually saved right now. */
+  async getCurrentEvolutionSeries() {
+    return this.page.evaluate(async () => {
+      const list = await loadHistoryList();
+      return getEvolutionSeries(list);
+    });
+  }
+
+  /**
+   * Given the same `historyList` you'd pass to computeEvolutionSeriesFor,
+   * asserts each outcome's percentage series (oldest to newest) matches
+   * `expectedPercentagesByKey`, e.g. { first: [50, 66], second: [...], fault: [...] }.
+   */
+  async expectEvolutionSeriesToBe(historyList, expectedPercentagesByKey) {
+    const { sessionCount, series } = await this.computeEvolutionSeriesFor(historyList);
+    expect(sessionCount).toBe(historyList.length);
+
+    Object.keys(expectedPercentagesByKey).forEach((key) => {
+      const found = series.find((s) => s.key === key);
+      const actualPercentages = found.points.map((p) => p.percentage);
+      expect(actualPercentages).toEqual(expectedPercentagesByKey[key]);
+    });
   }
 
   // --- ending a practice session -----------------------------------------

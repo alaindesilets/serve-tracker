@@ -486,13 +486,55 @@ const canvas = document.getElementById('chart');
 const ctx = canvas.getContext('2d');
 const colors = { first: '#4E9B5E', second: '#E8C93D', fault: '#D6483F' };
 
+// --- chart model (pure, testable) ------------------------------------
+// Computes what the donut chart should show — values, percentages,
+// colors, and start/end angles — with no Canvas or DOM involved. This
+// is what a test should call to verify the chart is correct; drawChart()
+// below is just the "view" that paints whatever this returns.
+// Angles are in radians, 0 = 12 o'clock, sweeping clockwise (matches
+// what ctx.arc() expects).
+function getChartSegments(sessionState){
+  const total = sessionState.first + sessionState.second + sessionState.fault;
+  if(total === 0){
+    return { total: 0, segments: [] };
+  }
+
+  const order = [
+    { key: 'first',  value: sessionState.first,  color: colors.first },
+    { key: 'second', value: sessionState.second, color: colors.second },
+    { key: 'fault',  value: sessionState.fault,  color: colors.fault },
+  ];
+
+  let start = -Math.PI/2;
+  const segments = [];
+  order.forEach(item => {
+    if(item.value === 0) return;
+    const fraction = item.value / total;
+    const sweep = fraction * Math.PI * 2;
+    segments.push({
+      key: item.key,
+      value: item.value,
+      percentage: Math.round(fraction * 100),
+      color: item.color,
+      startAngle: start,
+      endAngle: start + sweep,
+    });
+    start += sweep;
+  });
+
+  return { total, segments };
+}
+
 // Draws the donut chart for the current session (state.first/second/fault).
-// Falls back to an empty grey ring when there's no data yet.
+// Falls back to an empty grey ring when there's no data yet. All the
+// "what to draw" logic lives in getChartSegments() above — this function
+// only paints it.
 function drawChart(){
-  const total = state.first + state.second + state.fault;
   const w = canvas.width, h = canvas.height;
   const cx = w/2, cy = h/2, rOuter = w/2 - 4, rInner = rOuter * 0.6;
   ctx.clearRect(0,0,w,h);
+
+  const { total, segments } = getChartSegments(state);
 
   if(total === 0){
     ctx.beginPath();
@@ -503,24 +545,15 @@ function drawChart(){
     return;
   }
 
-  const segments = [
-    { value: state.first, color: colors.first },
-    { value: state.second, color: colors.second },
-    { value: state.fault, color: colors.fault }
-  ];
-
-  let start = -Math.PI/2;
   segments.forEach(seg => {
-    if(seg.value === 0) return;
-    const angle = (seg.value/total) * Math.PI*2;
     ctx.beginPath();
-    ctx.arc(cx, cy, (rOuter+rInner)/2, start, start+angle);
+    ctx.arc(cx, cy, (rOuter+rInner)/2, seg.startAngle, seg.endAngle);
     ctx.lineWidth = rOuter - rInner;
     ctx.strokeStyle = seg.color;
     ctx.stroke();
-    start += angle;
   });
 }
+
 
 function pct(n, d){ return d === 0 ? 0 : Math.round((n/d)*100); }
 
@@ -580,6 +613,28 @@ function bump(key){
 document.getElementById('btn-first').addEventListener('click', () => bump('first'));
 document.getElementById('btn-second').addEventListener('click', () => bump('second'));
 document.getElementById('btn-fault').addEventListener('click', () => bump('fault'));
+
+// --- external Bluetooth remote / pedal support ---------------------------
+// Cheap "camera shutter" clickers send a Volume key, which Android
+// intercepts before it ever reaches the page — those won't work here.
+// A real presentation remote or a footpedal (e.g. AirTurn) sends genuine
+// keystrokes instead, which do reach the page as normal keydown events.
+// Several common key layouts are recognized at once so most such devices
+// work without needing to reconfigure them:
+//   - Arrow keys (most presentation clickers): Left = 1st, Up = 2nd, Right = fault
+//   - Digits 1 / 2 / 3 (numeric keypad remotes)
+//   - Letters J / K / L (a common alternate preset on footpedals)
+const REMOTE_KEY_BINDINGS = {
+  'ArrowLeft': 'first',  '1': 'first',  'j': 'first',  'J': 'first',
+  'ArrowUp':   'second', '2': 'second', 'k': 'second', 'K': 'second',
+  'ArrowRight':'fault',  '3': 'fault',  'l': 'fault',  'L': 'fault',
+};
+document.addEventListener('keydown', (e) => {
+  const target = REMOTE_KEY_BINDINGS[e.key];
+  if (!target) return;
+  e.preventDefault();
+  bump(target);
+});
 
 // --- session history ------------------------------------------------------
 // Each saved session is { name, date (ISO string), first, second, fault }.
@@ -806,11 +861,31 @@ document.querySelectorAll('.hist-tab').forEach(tab => {
   });
 });
 
+// --- trends chart model (pure, testable) --------------------------------
+// Computes what the "Trends" line chart should show — one series per
+// outcome, each a list of {index, percentage} points in chronological
+// order — with no Canvas involved. renderEvolutionChart() below only
+// paints whatever this returns.
+function getEvolutionSeries(historyList){
+  const chrono = historyList.slice().reverse(); // oldest to newest
+  const sessionCount = chrono.length;
+
+  const series = ['first', 'second', 'fault'].map(key => ({
+    key,
+    color: colors[key],
+    points: chrono.map((session, index) => {
+      const total = session.first + session.second + session.fault;
+      return { index, percentage: pct(session[key], total) };
+    }),
+  }));
+
+  return { sessionCount, series };
+}
+
 // Draws the "Trends" line chart: one line per outcome (first/second/fault),
 // each session's percentage of its own total, oldest to newest left-to-right.
 async function renderEvolutionChart(){
   const list = await loadHistoryList();
-  const chrono = list.slice().reverse(); // oldest to newest
   const canvas = document.getElementById('evo-chart');
   const container = canvas.parentElement;
   const w = Math.max(container.clientWidth - 4, 100);
@@ -820,7 +895,9 @@ async function renderEvolutionChart(){
   const c = canvas.getContext('2d');
   c.clearRect(0, 0, w, h);
 
-  if(chrono.length === 0){
+  const { sessionCount, series } = getEvolutionSeries(list);
+
+  if(sessionCount === 0){
     c.fillStyle = '#7C9285';
     c.font = '13px Inter';
     c.textAlign = 'center';
@@ -846,11 +923,15 @@ async function renderEvolutionChart(){
     c.fillText(v + '%', pad.left - 4, y + 3);
   });
 
-  const n = chrono.length;
+  const n = sessionCount;
   const xAt = i => pad.left + (n === 1 ? plotW/2 : (i/(n-1)) * plotW);
   const yAt = v => pad.top + plotH - (v/100) * plotH;
 
-  ['first','fault','second'].forEach(key => {
+  // draw order first/fault/second (not the array's own order) so the
+  // 2nd-serve line always ends up on top, easiest to misread if buried
+  const drawOrder = ['first', 'fault', 'second'];
+  drawOrder.forEach(key => {
+    const s = series.find(item => item.key === key);
     c.lineJoin = 'round';
     c.lineCap = 'round';
 
@@ -858,37 +939,31 @@ async function renderEvolutionChart(){
     c.strokeStyle = 'rgba(10,17,13,0.9)';
     c.lineWidth = 4.5;
     c.beginPath();
-    chrono.forEach((s, i) => {
-      const total = s.first + s.second + s.fault;
-      const v = pct(s[key], total);
-      const x = xAt(i), y = yAt(v);
+    s.points.forEach((p, i) => {
+      const x = xAt(p.index), y = yAt(p.percentage);
       if(i === 0) c.moveTo(x, y); else c.lineTo(x, y);
     });
     c.stroke();
 
     // colored line drawn on top of the outline
-    c.strokeStyle = colors[key];
+    c.strokeStyle = s.color;
     c.lineWidth = 2.5;
     c.beginPath();
-    chrono.forEach((s, i) => {
-      const total = s.first + s.second + s.fault;
-      const v = pct(s[key], total);
-      const x = xAt(i), y = yAt(v);
+    s.points.forEach((p, i) => {
+      const x = xAt(p.index), y = yAt(p.percentage);
       if(i === 0) c.moveTo(x, y); else c.lineTo(x, y);
     });
     c.stroke();
 
-    chrono.forEach((s, i) => {
-      const total = s.first + s.second + s.fault;
-      const v = pct(s[key], total);
-      const x = xAt(i), y = yAt(v);
+    s.points.forEach((p) => {
+      const x = xAt(p.index), y = yAt(p.percentage);
       c.beginPath();
       c.arc(x, y, 3, 0, Math.PI*2);
       c.fillStyle = 'rgba(10,17,13,0.9)';
       c.fill();
       c.beginPath();
       c.arc(x, y, 2, 0, Math.PI*2);
-      c.fillStyle = colors[key];
+      c.fillStyle = s.color;
       c.fill();
     });
   });

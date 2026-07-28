@@ -56,6 +56,60 @@ test.describe('recording serves', () => {
   });
 });
 
+test.describe('donut chart model', () => {
+  test('an empty session has no segments', async () => {
+    const { total, segments } = await app.computeChartSegmentsFor({ first: 0, second: 0, fault: 0 });
+    expect(total).toBe(0);
+    expect(segments).toEqual([]);
+  });
+
+  test('each segment gets the right percentage, color, and key', async () => {
+    // 2 first-serve-in, 1 second-serve-in, 1 double-fault -> 50/25/25
+    await app.expectSegmentsToBe([
+      { key: 'first', value: 2, percentage: 50 },
+      { key: 'second', value: 1, percentage: 25 },
+      { key: 'fault', value: 1, percentage: 25 },
+    ]);
+
+    // colors should still be distinct from one another
+    const { segments } = await app.computeChartSegmentsFor({ first: 2, second: 1, fault: 1 });
+    expect(new Set(segments.map(s => s.color)).size).toBe(3);
+  });
+
+  test('a zero-count outcome is skipped entirely, not drawn as an empty slice', async () => {
+    await app.expectSegmentsToBe([
+      { key: 'first', value: 3, percentage: 75 },
+      { key: 'fault', value: 1, percentage: 25 },
+    ]);
+  });
+
+  test('segments are contiguous and sweep exactly a full circle', async () => {
+    const { segments } = await app.computeChartSegmentsFor({ first: 5, second: 3, fault: 2 });
+
+    // starts at 12 o'clock
+    expect(segments[0].startAngle).toBeCloseTo(-Math.PI / 2, 5);
+
+    // each segment picks up exactly where the previous one ended
+    for (let i = 1; i < segments.length; i++) {
+      expect(segments[i].startAngle).toBeCloseTo(segments[i - 1].endAngle, 5);
+    }
+
+    // the whole ring sweeps exactly 360 degrees (2*PI), no gaps or overlap
+    const totalSweep = segments.reduce((sum, s) => sum + (s.endAngle - s.startAngle), 0);
+    expect(totalSweep).toBeCloseTo(Math.PI * 2, 5);
+  });
+
+  test('reflects whatever is actually on screen after tapping buttons', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.registerDoubleFaults(1);
+
+    const { total, segments } = await app.getCurrentChartSegments();
+    expect(total).toBe(2);
+    expect(segments.map(s => s.key)).toEqual(['first', 'fault']);
+    expect(segments.map(s => s.percentage)).toEqual([50, 50]);
+  });
+});
+
 test.describe('ending a practice session', () => {
   test('declining to save still clears the counters, and keeps no record', async () => {
     await app.registerSuccessfulFirstServes(1);
@@ -104,6 +158,62 @@ test.describe('session history', () => {
     await app.openHistory();
     await app.viewTrends();
     expect(await app.isTrendsChartVisible()).toBe(true);
+  });
+});
+
+test.describe('trends chart model', () => {
+  test('an empty history has no sessions and no points', async () => {
+    const { sessionCount, series } = await app.computeEvolutionSeriesFor([]);
+    expect(sessionCount).toBe(0);
+    series.forEach((s) => expect(s.points).toEqual([]));
+  });
+
+  test('one series per outcome, in the same order every time', async () => {
+    const { series } = await app.computeEvolutionSeriesFor([
+      { name: 'A', date: new Date().toISOString(), first: 1, second: 0, fault: 0 },
+    ]);
+    expect(series.map((s) => s.key)).toEqual(['first', 'second', 'fault']);
+  });
+
+  test('sessions are read oldest-to-newest, even though history is stored newest-first', async () => {
+    // History is stored newest-first (unshift), so entry [0] here is the
+    // most recent session — the model must reverse it back to chronological
+    // order before turning it into chart points.
+    const historyNewestFirst = [
+      { name: 'Most recent',  date: new Date().toISOString(), first: 4, second: 0, fault: 0 }, // 100%
+      { name: 'Oldest',       date: new Date().toISOString(), first: 1, second: 0, fault: 1 }, // 50%
+    ];
+
+    await app.expectEvolutionSeriesToBe(historyNewestFirst, {
+      first: [50, 100], // oldest session first, then the most recent
+    });
+  });
+
+  test('each session\'s percentage is relative to its own total, not the others', async () => {
+    const historyNewestFirst = [
+      { name: 'Small session', date: new Date().toISOString(), first: 1, second: 0, fault: 1 }, // 50%
+      { name: 'Big session',   date: new Date().toISOString(), first: 8, second: 0, fault: 2 }, // 80%
+    ];
+
+    await app.expectEvolutionSeriesToBe(historyNewestFirst, {
+      first: [80, 50], // chronological: "Big session" first, then "Small session"
+    });
+  });
+
+  test('reflects real saved sessions, oldest to newest', async () => {
+    await app.registerSuccessfulFirstServes(1);
+    await app.endSessionAndSave('First saved');
+
+    await app.registerSuccessfulFirstServes(1);
+    await app.registerDoubleFaults(1);
+    await app.endSessionAndSave('Second saved');
+
+    await app.openHistory();
+    const list = await app.getSavedSessionNames(); // sanity: both are there
+    expect(list).toEqual(['Second saved', 'First saved']); // newest-first in the UI
+
+    const { sessionCount } = await app.getCurrentEvolutionSeries();
+    expect(sessionCount).toBe(2);
   });
 });
 
