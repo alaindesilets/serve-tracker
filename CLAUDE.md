@@ -30,9 +30,10 @@ Pages: https://alaindesilets.github.io/serve-tracker/
 - `index.html` — the whole app (HTML/CSS/vanilla JS, no build step,
   no framework). Must keep working by just opening the file.
 - `icon.png`, `manifest.json` — plain files, not inlined base64.
-- `tests/` — Playwright, two projects: `automated` (`npm test`) and
+- `tests/` — Playwright, two projects, each in its own subfolder:
+  `automated` (`npm test`, lives in `tests/fully-automated-tests/`) and
   `semi-automated` (`npm run test:semi`, opens a browser, asks a human
-  to confirm a chart visually — see `tests/semi-automated/`).
+  to confirm a chart visually — see `tests/semi-automated-tests/`).
 
 ## Conventions
 

@@ -3,9 +3,9 @@ const { test, expect } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { ServeTrackerManipulator } = require('./serve-tracker-manipulator');
+const { ServeTrackerManipulator } = require('../serve-tracker-manipulator');
 
-const APP_PATH = 'file://' + path.resolve(__dirname, '..', 'index.html');
+const APP_PATH = 'file://' + path.resolve(__dirname, '..', '..', 'index.html');
 const PAGE_URL = process.env.PAGE_URL || APP_PATH;
 
 /** @type {ServeTrackerManipulator} */
