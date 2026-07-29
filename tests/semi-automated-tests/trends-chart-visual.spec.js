@@ -52,7 +52,7 @@ test.describe('trends chart — visual check', () => {
     await app.viewTrends();
 
     const screenshotPath = path.join(SCREENSHOT_DIR, 'trends-rising-first-serve.png');
-    await page.locator('#evo-chart').screenshot({ path: screenshotPath });
+    await app.screenshotTrendsChart(screenshotPath);
 
     const question =
       'Expected: Trends chart, 3 points left (oldest) to right (newest):\n' +

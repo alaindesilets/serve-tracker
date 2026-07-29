@@ -41,7 +41,7 @@ test.describe('donut chart — visual check', () => {
     await app.registerDoubleFaults(1);
 
     const screenshotPath = path.join(SCREENSHOT_DIR, 'donut-50-25-25.png');
-    await page.locator('#chart').screenshot({ path: screenshotPath });
+    await app.screenshotDonutChart(screenshotPath);
 
     const question =
       "Expected: donut chart, 12 o'clock, clockwise:\n" +

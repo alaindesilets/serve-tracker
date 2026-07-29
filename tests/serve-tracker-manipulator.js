@@ -89,12 +89,12 @@ class ServeTrackerManipulator {
    * math (percentages, angles, colors) in isolation.
    */
   async computeChartSegmentsFor(counts) {
-    return this.page.evaluate((c) => getChartSegments(c), counts);
+    return this.page.evaluate((c) => donutChart.computeSegments(c), counts);
   }
 
   /** Same, but reads whatever the current on-screen session actually is. */
   async getCurrentChartSegments() {
-    return this.page.evaluate(() => getChartSegments(state));
+    return this.page.evaluate(() => donutChart.computeSegments(state));
   }
 
   /**
@@ -115,6 +115,14 @@ class ServeTrackerManipulator {
     expect(actual.map((s) => s.percentage)).toEqual(expSegments.map((s) => s.percentage));
   }
 
+  /**
+   * Screenshots the donut chart's canvas to `screenshotPath`, for a human to eyeball.
+   * @param {string} screenshotPath
+   */
+  async screenshotDonutChart(screenshotPath) {
+    await this.page.locator('#chart').screenshot({ path: screenshotPath });
+  }
+
   // --- trends chart model (no pixels involved) ---------------------------
 
   /**
@@ -123,14 +131,14 @@ class ServeTrackerManipulator {
    * from the app's own model function — no canvas involved.
    */
   async computeEvolutionSeriesFor(historyList) {
-    return this.page.evaluate((list) => getEvolutionSeries(list), historyList);
+    return this.page.evaluate((list) => evolutionPane.computeSeries(list), historyList);
   }
 
   /** Same, but reads whatever history is actually saved right now. */
   async getCurrentEvolutionSeries() {
     return this.page.evaluate(async () => {
       const list = await loadHistoryList();
-      return getEvolutionSeries(list);
+      return evolutionPane.computeSeries(list);
     });
   }
 
@@ -148,6 +156,14 @@ class ServeTrackerManipulator {
       const actualPercentages = found.points.map((p) => p.percentage);
       expect(actualPercentages).toEqual(expectedPercentagesByKey[key]);
     });
+  }
+
+  /**
+   * Screenshots the Trends chart's canvas to `screenshotPath`, for a human to eyeball.
+   * @param {string} screenshotPath
+   */
+  async screenshotTrendsChart(screenshotPath) {
+    await this.page.locator('#evo-chart').screenshot({ path: screenshotPath });
   }
 
   // --- ending a practice session -----------------------------------------

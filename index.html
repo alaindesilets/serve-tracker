@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!--
+  Serve Tracker
+  Single-file PWA: tennis serve practice tracker (1st serve in / 2nd
+  serve in / double fault) with a donut chart, session history, a
+  trends chart, French/English UI, and JSON export/import backup.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -137,13 +143,13 @@
   #export-btn{ margin-left:auto; }
   #export-btn:active, #import-btn:active{ background:var(--surface-2); color:var(--line); }
 
-  #link-row{
+  #auto-backup-row{
     display:none; align-items:center; justify-content:space-between; gap:8px;
     margin:10px 16px 0; padding:8px 10px; background:var(--surface-2); border-radius:12px;
   }
-  #link-row.show{ display:flex; }
-  .link-status{ font-size:11px; color:var(--line); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #link-btn, #unlink-btn{
+  #auto-backup-row.show{ display:flex; }
+  .auto-backup-status{ font-size:11px; color:var(--line); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #enable-auto-backup-btn, #disable-auto-backup-btn{
     background:none; border:1px solid var(--muted); color:var(--line);
     font-family:'Inter',sans-serif; font-size:11px; padding:5px 10px; border-radius:14px;
     text-transform:uppercase; flex:0 0 auto;
@@ -215,6 +221,7 @@
 </head>
 <body>
 <div id="app">
+  <!-- Top bar: title, language switch, help, history, and reset controls -->
   <header>
     <h1 data-i18n="title">Serve session</h1>
     <div style="display:flex; gap:8px; align-items:center;">
@@ -225,6 +232,8 @@
     </div>
   </header>
 
+  <!-- Reminder to export/back up data, shown by checkExportReminder() when
+       it's been 7+ days (or never) since the last export -->
   <div id="export-banner">
     <span data-i18n="exportReminder">Consider exporting your data once in a while.</span>
     <div style="display:flex; gap:6px;">
@@ -233,6 +242,7 @@
     </div>
   </div>
 
+  <!-- Help overlay: static instructions panel, opened via the "?" button -->
   <div id="help-overlay">
     <div id="help-panel">
       <div id="help-head">
@@ -243,12 +253,15 @@
     </div>
   </div>
 
+  <!-- History overlay: past sessions (List tab) or the Trends chart (Trends
+       tab), plus export/import and linked-backup-file controls -->
   <div id="history-overlay">
     <div id="history-panel">
       <div id="history-head">
         <span data-i18n="historyTitle">Session history</span>
         <button id="history-close" data-i18n="close">Close</button>
       </div>
+      <!-- List/Trends tab switch, plus manual backup (export/import) -->
       <div id="history-tabs">
         <button class="hist-tab active" data-view="list" data-i18n="tabList">List</button>
         <button class="hist-tab" data-view="chart" data-i18n="tabChart">Trends</button>
@@ -256,8 +269,12 @@
         <button id="import-btn" data-i18n="importBtn">Import</button>
         <input type="file" id="import-file" accept="application/json" style="display:none;">
       </div>
-      <div id="link-row"></div>
+      <!-- File System Access auto-backup control, filled in by
+           renderAutoBackupRow(); stays empty when the API isn't supported -->
+      <div id="auto-backup-row"></div>
+      <!-- List tab content, filled in by renderHistoryPanel() -->
       <div id="history-list"></div>
+      <!-- Trends tab content: line chart painted by evolutionPane.render() -->
       <div id="history-chart-view">
         <canvas id="evo-chart" height="180"></canvas>
         <div id="evo-legend">
@@ -270,6 +287,7 @@
     </div>
   </div>
 
+  <!-- Current session: donut chart + legend, driven by state/renderCurrentTennisSession() -->
   <div id="stats">
     <div id="chart-wrap">
       <canvas id="chart" width="104" height="104"></canvas>
@@ -305,6 +323,7 @@
 
   <div id="sub-stat"><span data-i18n="secondRateLabel">2nd serve conversion rate: </span><b id="second-rate">—</b></div>
 
+  <!-- The three serve-recording buttons -->
   <div id="buttons">
     <button class="serve" id="btn-first"><span data-i18n="firstServe">1st serve</span> <span class="count" id="c-first">0</span></button>
     <button class="serve" id="btn-second"><span data-i18n="secondServe">2nd serve</span> <span class="count" id="c-second">0</span></button>
@@ -348,8 +367,8 @@ const translations = {
     importSuccess: 'Données restaurées avec succès.',
     importError: "Ce fichier n'est pas une sauvegarde valide.",
     exportReminder: 'Pense à exporter tes données de temps en temps.',
-    linkBtn: 'Lier un fichier de sauvegarde',
-    unlinkBtn: 'Délier',
+    enableAutoBackupBtn: 'Activer la sauvegarde automatique',
+    disableAutoBackupBtn: 'Désactiver',
     linkFailed: "Impossible de lier ce fichier.",
     helpTitle: 'Aide',
     helpBody: `
@@ -370,7 +389,7 @@ const translations = {
       <p>Onglet <b>Liste</b> : tes sessions sauvegardées, chacune avec un bouton <b>Suppr.</b> pour la retirer définitivement de l'historique. Onglet <b>Évolution</b> : un graphique de tes trois taux au fil du temps.</p>
 
       <h3>Sauvegarder tes données</h3>
-      <p>Tes stats vivent dans le navigateur. Utilise <b>Exporter</b> pour télécharger une copie, et <b>Importer</b> pour la recharger au besoin. Si l'option apparaît, <b>Lier un fichier de sauvegarde</b> écrit automatiquement dans un fichier de ton choix à chaque session. Pour un nettoyage courant de Chrome, décoche "Cookies et données de site" et ne coche que "Images et fichiers en cache".</p>
+      <p>Tes stats vivent dans le navigateur. Utilise <b>Exporter</b> pour télécharger une copie, et <b>Importer</b> pour la recharger au besoin. Si l'option apparaît, <b>Activer la sauvegarde automatique</b> écrit automatiquement dans un fichier de ton choix à chaque session. Pour un nettoyage courant de Chrome, décoche "Cookies et données de site" et ne coche que "Images et fichiers en cache".</p>
 
       <h3>Langue</h3>
       <p>Le menu déroulant en haut à gauche bascule toute l'appli entre le français et l'anglais.</p>
@@ -405,8 +424,8 @@ const translations = {
     importSuccess: 'Data restored successfully.',
     importError: 'This file is not a valid backup.',
     exportReminder: 'Consider exporting your data once in a while.',
-    linkBtn: 'Link a backup file',
-    unlinkBtn: 'Unlink',
+    enableAutoBackupBtn: 'Turn on auto-backup',
+    disableAutoBackupBtn: 'Turn off',
     linkFailed: 'Could not link this file.',
     helpTitle: 'Help',
     helpBody: `
@@ -427,7 +446,7 @@ const translations = {
       <p><b>List</b> tab: your saved sessions, each with a <b>Delete</b> button to permanently remove it from history. <b>Trends</b> tab: a chart of your three rates over time.</p>
 
       <h3>Backing up your data</h3>
-      <p>Your stats live in the browser. Use <b>Export</b> to download a copy, and <b>Import</b> to reload it if needed. If the option shows up, <b>Link a backup file</b> automatically writes to a file of your choice every time a session is saved. For routine Chrome cleanups, uncheck "Cookies and site data" and only check "Cached images and files".</p>
+      <p>Your stats live in the browser. Use <b>Export</b> to download a copy, and <b>Import</b> to reload it if needed. If the option shows up, <b>Turn on auto-backup</b> automatically writes to a file of your choice every time a session is saved. For routine Chrome cleanups, uncheck "Cookies and site data" and only check "Cached images and files".</p>
 
       <h3>Language</h3>
       <p>The dropdown at the top left switches the whole app between French and English.</p>
@@ -440,9 +459,7 @@ let currentLang = 'fr';
 // Shorthand to fetch a translated string for the active language.
 function t(key){ return translations[currentLang][key]; }
 
-// Swaps every [data-i18n] element's text, the help panel HTML, and
-// re-renders anything that shows translated text (stats, history, chart).
-function applyLanguage(lang){
+function translateUI(lang){
   currentLang = translations[lang] ? lang : 'fr';
   document.documentElement.lang = currentLang;
   document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -453,18 +470,16 @@ function applyLanguage(lang){
   });
   document.getElementById('help-body').innerHTML = translations[currentLang].helpBody;
   try{ localStorage.setItem(LANG_KEY, currentLang); }catch(e){}
-  render();
+  renderCurrentTennisSession();
   if(document.getElementById('history-overlay').classList.contains('open')){
     renderHistoryPanel();
     if(document.getElementById('history-chart-view').style.display !== 'none'){
-      renderEvolutionChart();
+      evolutionPane.render();
     }
   }
 }
 
-// Populates the language <select> from the translations object and
-// restores the last language the user picked (defaults to French).
-function initLangSelector(){
+function populateUILanguageSelector(){
   const sel = document.getElementById('lang-select');
   sel.innerHTML = Object.keys(translations).map(code =>
     '<option value="' + code + '">' + translations[code].langName + '</option>'
@@ -472,95 +487,101 @@ function initLangSelector(){
   let saved = 'fr';
   try{ saved = localStorage.getItem(LANG_KEY) || 'fr'; }catch(e){}
   sel.value = translations[saved] ? saved : 'fr';
-  sel.addEventListener('change', () => applyLanguage(sel.value));
-  applyLanguage(sel.value);
+  sel.addEventListener('change', () => translateUI(sel.value));
+  translateUI(sel.value);
 }
 
-// --- current session state ----------------------------------------------
+// --- State of the current tennis serving session  ----------------------------------------------
 // The only three numbers that matter: how many times each button was tapped
-// since the last reset. Persisted to localStorage after every change.
-const STORAGE_KEY = 'serve-stats';
+// (1st serve in, 2nd serve in, double fault) since the last reset.
 let state = { first: 0, second: 0, fault: 0 };
 
-const canvas = document.getElementById('chart');
-const ctx = canvas.getContext('2d');
 const colors = { first: '#4E9B5E', second: '#E8C93D', fault: '#D6483F' };
 
-// --- chart model (pure, testable) ------------------------------------
-// Computes what the donut chart should show — values, percentages,
-// colors, and start/end angles — with no Canvas or DOM involved. This
-// is what a test should call to verify the chart is correct; drawChart()
-// below is just the "view" that paints whatever this returns.
-// Angles are in radians, 0 = 12 o'clock, sweeping clockwise (matches
-// what ctx.arc() expects).
-function getChartSegments(sessionState){
-  const total = sessionState.first + sessionState.second + sessionState.fault;
-  if(total === 0){
-    return { total: 0, segments: [] };
+// --- DonutChart: the current-session donut (model + the canvas it's
+// painted to) --------------------------------------------------------------
+class DonutChart {
+  static TWELVE_OCLOCK_RADIANS = -Math.PI / 2;
+
+  constructor(){
+    this.canvas = document.getElementById('chart');
+    this.ctx = this.canvas.getContext('2d');
   }
 
-  const order = [
-    { key: 'first',  value: sessionState.first,  color: colors.first },
-    { key: 'second', value: sessionState.second, color: colors.second },
-    { key: 'fault',  value: sessionState.fault,  color: colors.fault },
-  ];
+  computeSegments(sessionState){
+    const totalPoints = sessionState.first + sessionState.second + sessionState.fault;
+    if(totalPoints === 0){
+      return { totalPoints: 0, segments: [] };
+    }
 
-  let start = -Math.PI/2;
-  const segments = [];
-  order.forEach(item => {
-    if(item.value === 0) return;
-    const fraction = item.value / total;
-    const sweep = fraction * Math.PI * 2;
-    segments.push({
-      key: item.key,
-      value: item.value,
-      percentage: Math.round(fraction * 100),
-      color: item.color,
-      startAngle: start,
-      endAngle: start + sweep,
+    const order = [
+      { key: 'first',  value: sessionState.first,  color: colors.first },
+      { key: 'second', value: sessionState.second, color: colors.second },
+      { key: 'fault',  value: sessionState.fault,  color: colors.fault },
+    ];
+
+    let startAngleRadians = DonutChart.TWELVE_OCLOCK_RADIANS;
+    const segments = [];
+    order.forEach(item => {
+      if(item.value === 0) return;
+      const fraction = item.value / totalPoints;
+      const sweepClockwiseRadians = fraction * Math.PI * 2;
+      segments.push({
+        key: item.key,
+        value: item.value,
+        percentage: Math.round(fraction * 100),
+        color: item.color,
+        startAngleRadians,
+        endAngleRadians: startAngleRadians + sweepClockwiseRadians,
+      });
+      startAngleRadians += sweepClockwiseRadians;
     });
-    start += sweep;
-  });
 
-  return { total, segments };
-}
+    return { totalPoints, segments };
+  }
 
-// Draws the donut chart for the current session (state.first/second/fault).
-// Falls back to an empty grey ring when there's no data yet. All the
-// "what to draw" logic lives in getChartSegments() above — this function
-// only paints it.
-function drawChart(){
-  const w = canvas.width, h = canvas.height;
-  const cx = w/2, cy = h/2, rOuter = w/2 - 4, rInner = rOuter * 0.6;
-  ctx.clearRect(0,0,w,h);
+  // Donut chart: the colored circular chart that displays the percentages
+  // of 1st serve, 2nd serve, and double faults, with the total number of
+  // points in the middle.
+  render(sessionState){
+    const { canvas, ctx } = this;
+    const w = canvas.width, h = canvas.height;
+    const cx = w/2, cy = h/2, rOuter = w/2 - 4, rInner = rOuter * 0.6;
+    ctx.clearRect(0,0,w,h);
 
-  const { total, segments } = getChartSegments(state);
+    const { totalPoints, segments } = this.computeSegments(sessionState);
 
-  if(total === 0){
+    if(totalPoints === 0){
+      this._drawEmptyRing(cx, cy, rOuter, rInner);
+      return;
+    }
+
+    segments.forEach(seg => {
+      ctx.beginPath();
+      // startAngleRadians/endAngleRadians already use ctx.arc()'s own angle
+      // convention, so they're passed straight through with no conversion.
+      ctx.arc(cx, cy, (rOuter+rInner)/2, seg.startAngleRadians, seg.endAngleRadians);
+      ctx.lineWidth = rOuter - rInner;
+      ctx.strokeStyle = seg.color;
+      ctx.stroke();
+    });
+  }
+
+  _drawEmptyRing(cx, cy, rOuter, rInner){
+    const { ctx } = this;
     ctx.beginPath();
     ctx.arc(cx, cy, rOuter, 0, Math.PI*2);
     ctx.strokeStyle = '#2A4433';
     ctx.lineWidth = rOuter - rInner;
     ctx.stroke();
-    return;
   }
-
-  segments.forEach(seg => {
-    ctx.beginPath();
-    ctx.arc(cx, cy, (rOuter+rInner)/2, seg.startAngle, seg.endAngle);
-    ctx.lineWidth = rOuter - rInner;
-    ctx.strokeStyle = seg.color;
-    ctx.stroke();
-  });
 }
 
+const donutChart = new DonutChart();
 
-function pct(n, d){ return d === 0 ? 0 : Math.round((n/d)*100); }
+function percent(count, total){ return total === 0 ? 0 : Math.round((count/total)*100); }
 
-// Repaints everything driven by `state`: the donut chart, the total,
-// the three legend rows (percentage first, shot count second), and the
-// 2nd-serve conversion rate. Call this after any change to `state`.
-function render(){
+function displayCurrentServeStatistics(){
   const total = state.first + state.second + state.fault;
   document.getElementById('total-n').textContent = total;
 
@@ -568,78 +589,235 @@ function render(){
   document.getElementById('c-second').textContent = state.second;
   document.getElementById('c-fault').textContent = state.fault;
 
-  document.getElementById('leg-first').innerHTML = pct(state.first, total) + '%<span>' + state.first + ' ' + t('shots') + '</span>';
-  document.getElementById('leg-second').innerHTML = pct(state.second, total) + '%<span>' + state.second + ' ' + t('shots') + '</span>';
-  document.getElementById('leg-fault').innerHTML = pct(state.fault, total) + '%<span>' + state.fault + ' ' + t('shots') + '</span>';
+  document.getElementById('leg-first').innerHTML = percent(state.first, total) + '%<span>' + state.first + ' ' + t('shots') + '</span>';
+  document.getElementById('leg-second').innerHTML = percent(state.second, total) + '%<span>' + state.second + ' ' + t('shots') + '</span>';
+  document.getElementById('leg-fault').innerHTML = percent(state.fault, total) + '%<span>' + state.fault + ' ' + t('shots') + '</span>';
 
   const secondAttempts = state.second + state.fault;
   document.getElementById('second-rate').textContent =
-    secondAttempts === 0 ? '—' : pct(state.second, secondAttempts) + '% (' + state.second + '/' + secondAttempts + ')';
-
-  drawChart();
+    secondAttempts === 0 ? '—' : percent(state.second, secondAttempts) + '% (' + state.second + '/' + secondAttempts + ')';
 }
 
-// --- persistence (current session) --------------------------------------
-// Plain localStorage — works once the page is opened in a real browser
-// (including a local file:// page), but is wiped if the user clears
-// Chrome's "cookies and site data".
-async function save(){
-  try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }catch(e){ console.error('Échec de la sauvegarde', e); }
+function renderCurrentTennisSession(){
+  displayCurrentServeStatistics();
+  donutChart.render(state);
 }
 
-async function load(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      const parsed = JSON.parse(raw);
-      state = { first: parsed.first||0, second: parsed.second||0, fault: parsed.fault||0 };
-    }
-  }catch(e){
-    // no saved data yet — keep default state
+// This class saves app data to a persistent data store.
+//
+// Day to day, the current tennis session and the history are each saved as their
+// own JSON blob to the browser's local data store (localStorage) — the
+// default, and the only thing that works everywhere. Its problem: the
+// browser may erase it without notice.
+//
+// As a safety net against that, the session and history are also combined
+// into a single JSON object and written out as a backup, two ways:
+//   - automatically, to a file outside the browser's data store, on
+//     configurations that support it
+//   - manually, whenever the user exports their data to a safe location
+//     of their choice
+//
+// `state` itself is NOT owned here — it's a page-level variable, passed in
+// by whichever method needs it.
+//
+class DataStore {
+  static SESSION_KEY = 'serve-stats';
+  static HISTORY_KEY = 'history-sessions';
+  static EXPORT_DATE_KEY = 'last-export-date';
+
+  // window.showSaveFilePicker is desktop Chrome/Edge only — no mobile
+  // browser implements it (Chrome on iOS is a Safari wrapper, and Safari
+  // itself doesn't have it either; Chrome on Android doesn't implement it
+  // regardless of platform) — and it needs a secure context. Where it's
+  // unsupported, the auto-backup methods below are simply never called;
+  // the plain-download path in exportDB() is the fallback that always
+  // works everywhere, which is why both paths exist side by side.
+  static get supportsAutoBackup(){
+    return ('showSaveFilePicker' in window) && window.isSecureContext;
   }
-  render();
+
+  constructor(){
+    this.autoBackupFileHandle = null;
+  }
+
+  // --- current tennis session ---------------------------------------------
+  saveCurrentSession(state){
+    try{
+      localStorage.setItem(DataStore.SESSION_KEY, JSON.stringify(state));
+    }catch(e){ console.error('Failed to save', e); }
+  }
+
+  loadCurrentSession(){
+    try{
+      const raw = localStorage.getItem(DataStore.SESSION_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        return { first: parsed.first||0, second: parsed.second||0, fault: parsed.fault||0 };
+      }
+    }catch(e){
+      // no saved data yet — caller keeps its own default state
+    }
+    return { first: 0, second: 0, fault: 0 };
+  }
+
+  // --- session history -----------------------------------------------------
+  // Each saved session is { name, date (ISO string), first, second, fault }.
+  // Stored as one JSON array, newest entry first (unshift).
+  async loadHistory(){
+    try{
+      const raw = localStorage.getItem(DataStore.HISTORY_KEY);
+      if(raw) return JSON.parse(raw);
+    }catch(e){ /* no history yet */ }
+    return [];
+  }
+
+  async saveHistory(list){
+    try{
+      localStorage.setItem(DataStore.HISTORY_KEY, JSON.stringify(list));
+    }catch(e){ console.error('Failed to save history', e); }
+  }
+
+  async addSessionToHistory(name, state){
+    const list = await this.loadHistory();
+    list.unshift({
+      name,
+      date: new Date().toISOString(),
+      first: state.first,
+      second: state.second,
+      fault: state.fault,
+    });
+    await this.saveHistory(list);
+  }
+
+  // --- backup object: shared by both exportDB() (manual download) and
+  // writeAutoBackup() (automatic) below, so the two paths can never drift
+  // into building different-shaped backups.
+  async buildBackupObject(state){
+    const history = await this.loadHistory();
+    return { exportedAt: new Date().toISOString(), currentSession: state, history };
+  }
+
+  recordExportNow(){
+    try{ localStorage.setItem(DataStore.EXPORT_DATE_KEY, new Date().toISOString()); }catch(e){}
+  }
+
+  daysSinceLastExport(){
+    let lastExport = null;
+    try{ lastExport = localStorage.getItem(DataStore.EXPORT_DATE_KEY); }catch(e){}
+    return lastExport ? (Date.now() - new Date(lastExport).getTime()) / 86400000 : Infinity;
+  }
+
+  // --- auto-backup (File System Access API) ---------------------------------
+  get hasAutoBackup(){ return this.autoBackupFileHandle !== null; }
+  get autoBackupFileName(){ return this.autoBackupFileHandle ? this.autoBackupFileHandle.name : null; }
+
+  async enableAutoBackup(){
+    const handle = await window.showSaveFilePicker({
+      suggestedName: 'suivi-service-sauvegarde.json',
+      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+    });
+    this.autoBackupFileHandle = handle;
+    await this._idbSet('backup-handle', handle);
+  }
+
+  async disableAutoBackup(){
+    this.autoBackupFileHandle = null;
+    try{ await this._idbDelete('backup-handle'); }catch(e){}
+  }
+
+  // The handle itself is stashed in IndexedDB so we can try to reuse it on
+  // the next visit (still asks for permission again, since that's how the
+  // API works).
+  async restoreAutoBackupHandle(){
+    if(!DataStore.supportsAutoBackup) return;
+    try{
+      const handle = await this._idbGet('backup-handle');
+      if(handle){
+        const perm = await handle.queryPermission({ mode: 'readwrite' });
+        if(perm === 'granted' || perm === 'prompt') this.autoBackupFileHandle = handle;
+      }
+    }catch(e){ /* no auto-backup configured */ }
+  }
+
+  // Re-requests permission if it's not already granted. Silently returns
+  // false on any failure so callers can keep working without it.
+  async writeAutoBackup(state){
+    if(!this.autoBackupFileHandle) return false;
+    try{
+      let perm = await this.autoBackupFileHandle.queryPermission({ mode: 'readwrite' });
+      if(perm !== 'granted') perm = await this.autoBackupFileHandle.requestPermission({ mode: 'readwrite' });
+      if(perm !== 'granted') return false;
+      const writable = await this.autoBackupFileHandle.createWritable();
+      await writable.write(JSON.stringify(await this.buildBackupObject(state), null, 2));
+      await writable.close();
+      this.recordExportNow();
+      return true;
+    }catch(err){
+      console.error('Failed to write auto-backup', err);
+      return false;
+    }
+  }
+
+  // --- Minimal IndexedDB key/value helpers, private to this class — just
+  // enough to store and retrieve the auto-backup FileSystemFileHandle. ----
+  _idbOpen(){
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('serve-tracker-db', 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('kv'); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async _idbGet(key){
+    const db = await this._idbOpen();
+    return new Promise((resolve, reject) => {
+      const r = db.transaction('kv', 'readonly').objectStore('kv').get(key);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+  }
+  async _idbSet(key, value){
+    const db = await this._idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async _idbDelete(key){
+    const db = await this._idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+}
+
+const dataStore = new DataStore();
+
+async function saveLatestTennisSession(){
+  dataStore.saveCurrentSession(state);
+}
+
+async function loadLatestTennisSession(){
+  state = dataStore.loadCurrentSession();
+  renderCurrentTennisSession();
 }
 
 // Called by the three serve buttons — increments one counter, repaints,
 // and saves. This is the only place `state` is mutated during a session.
 function bump(key){
   state[key]++;
-  render();
-  save();
+  renderCurrentTennisSession();
+  saveLatestTennisSession();
 }
 
 document.getElementById('btn-first').addEventListener('click', () => bump('first'));
 document.getElementById('btn-second').addEventListener('click', () => bump('second'));
 document.getElementById('btn-fault').addEventListener('click', () => bump('fault'));
-
-// --- external Bluetooth remote / pedal support ---------------------------
-// Cheap "camera shutter" clickers send a Volume key, which Android
-// intercepts before it ever reaches the page — those won't work here.
-// A real presentation remote or a footpedal (e.g. AirTurn) sends genuine
-// keystrokes instead, which do reach the page as normal keydown events.
-// Several common key layouts are recognized at once so most such devices
-// work without needing to reconfigure them:
-//   - Arrow keys (most presentation clickers): Left = 1st, Up = 2nd, Right = fault
-//   - Digits 1 / 2 / 3 (numeric keypad remotes)
-//   - Letters J / K / L (a common alternate preset on footpedals)
-const REMOTE_KEY_BINDINGS = {
-  'ArrowLeft': 'first',  '1': 'first',  'j': 'first',  'J': 'first',
-  'ArrowUp':   'second', '2': 'second', 'k': 'second', 'K': 'second',
-  'ArrowRight':'fault',  '3': 'fault',  'l': 'fault',  'L': 'fault',
-};
-document.addEventListener('keydown', (e) => {
-  const target = REMOTE_KEY_BINDINGS[e.key];
-  if (!target) return;
-  e.preventDefault();
-  bump(target);
-});
-
-// --- session history ------------------------------------------------------
-// Each saved session is { name, date (ISO string), first, second, fault }.
-// Stored as one JSON array in localStorage, newest entry first (unshift).
-const HISTORY_KEY = 'history-sessions';
 
 function defaultSessionName(){
   const d = new Date();
@@ -650,29 +828,15 @@ function defaultSessionName(){
 }
 
 async function loadHistoryList(){
-  try{
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if(raw) return JSON.parse(raw);
-  }catch(e){ /* no history yet */ }
-  return [];
+  return dataStore.loadHistory();
 }
 
 async function saveHistoryList(list){
-  try{
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
-  }catch(e){ console.error('Échec de la sauvegarde de l\'historique', e); }
+  return dataStore.saveHistory(list);
 }
 
 async function addSessionToHistory(name){
-  const list = await loadHistoryList();
-  list.unshift({
-    name: name,
-    date: new Date().toISOString(),
-    first: state.first,
-    second: state.second,
-    fault: state.fault
-  });
-  await saveHistoryList(list);
+  return dataStore.addSessionToHistory(name, state);
 }
 
 async function renderHistoryPanel(){
@@ -689,7 +853,7 @@ async function renderHistoryPanel(){
     const dateStr = d.toLocaleDateString(loc) + ' ' + d.toLocaleTimeString(loc, {hour:'2-digit', minute:'2-digit'});
     return '<div class="hist-item">' +
       '<div><div class="hist-name">' + escapeHtml(s.name) + '</div><div class="hist-date">' + dateStr + '</div></div>' +
-      '<div class="hist-stats">' + total + ' ' + t('pts') + '<br>' + pct(s.first, total) + '% / ' + pct(s.second, total) + '% / ' + pct(s.fault, total) + '%</div>' +
+      '<div class="hist-stats">' + total + ' ' + t('pts') + '<br>' + percent(s.first, total) + '% / ' + percent(s.second, total) + '% / ' + percent(s.fault, total) + '%</div>' +
       '<button class="hist-delete" data-idx="' + i + '">' + t('delete') + '</button>' +
       '</div>';
   }).join('');
@@ -712,125 +876,48 @@ function escapeHtml(str){
   return div.innerHTML;
 }
 
-// --- optional: File System Access API (linked backup file) ---------------
-// Lets the user pick a file anywhere on their device that the app writes
-// to directly, independent of anything Chrome's "clear site data" can
-// touch. Only exposed in browsers/contexts that support it — the whole
-// section quietly does nothing (and the UI stays hidden) otherwise.
-// The FileSystemFileHandle itself is stashed in IndexedDB so we can try
-// to reuse it on the next visit (still asks for permission again, since
-// that's how the API works).
-const supportsFSA = ('showSaveFilePicker' in window) && window.isSecureContext;
-let linkedFileHandle = null;
-
-// Minimal IndexedDB key/value helpers — just enough to store and retrieve
-// the linked FileSystemFileHandle across page loads.
-function idbOpen(){
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('suivi-service-db', 1);
-    req.onupgradeneeded = () => { req.result.createObjectStore('kv'); };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbGet(key){
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const r = db.transaction('kv', 'readonly').objectStore('kv').get(key);
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
-}
-async function idbSet(key, value){
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('kv', 'readwrite');
-    tx.objectStore('kv').put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-async function idbDelete(key){
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('kv', 'readwrite');
-    tx.objectStore('kv').delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
 async function buildBackupObject(){
-  const history = await loadHistoryList();
-  return { exportedAt: new Date().toISOString(), currentSession: state, history };
+  return dataStore.buildBackupObject(state);
 }
 
-// Writes the full backup (session + history) to the linked file, if any.
-// Re-requests permission if it's not already granted. Silently returns
-// false on any failure so callers can keep working without it.
-async function writeBackupToLinkedFile(){
-  if(!linkedFileHandle) return false;
-  try{
-    let perm = await linkedFileHandle.queryPermission({ mode: 'readwrite' });
-    if(perm !== 'granted') perm = await linkedFileHandle.requestPermission({ mode: 'readwrite' });
-    if(perm !== 'granted') return false;
-    const writable = await linkedFileHandle.createWritable();
-    await writable.write(JSON.stringify(await buildBackupObject(), null, 2));
-    await writable.close();
-    try{ localStorage.setItem(EXPORT_DATE_KEY, new Date().toISOString()); }catch(e){}
-    hideExportBanner();
-    return true;
-  }catch(err){
-    console.error('Échec de l\'écriture du fichier lié', err);
-    return false;
-  }
+async function writeAutoBackup(){
+  const wrote = await dataStore.writeAutoBackup(state);
+  if(wrote) hideExportBanner();
+  return wrote;
 }
 
-async function linkBackupFile(){
+async function enableAutoBackup(){
   try{
-    const handle = await window.showSaveFilePicker({
-      suggestedName: 'suivi-service-sauvegarde.json',
-      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
-    });
-    linkedFileHandle = handle;
-    await idbSet('backup-handle', handle);
-    await writeBackupToLinkedFile();
-    renderLinkRow();
+    await dataStore.enableAutoBackup();
+    await writeAutoBackup();
+    renderAutoBackupRow();
   }catch(err){
     // user cancelled the picker — nothing to do
   }
 }
 
-async function unlinkBackupFile(){
-  linkedFileHandle = null;
-  try{ await idbDelete('backup-handle'); }catch(e){}
-  renderLinkRow();
+async function disableAutoBackup(){
+  await dataStore.disableAutoBackup();
+  renderAutoBackupRow();
 }
 
-function renderLinkRow(){
-  const row = document.getElementById('link-row');
-  if(!supportsFSA){ row.classList.remove('show'); return; }
+function renderAutoBackupRow(){
+  const row = document.getElementById('auto-backup-row');
+  if(!DataStore.supportsAutoBackup){ row.classList.remove('show'); return; }
   row.classList.add('show');
-  if(linkedFileHandle){
-    row.innerHTML = '<span class="link-status">🔗 ' + escapeHtml(linkedFileHandle.name) + '</span>' +
-      '<button id="unlink-btn">' + t('unlinkBtn') + '</button>';
-    document.getElementById('unlink-btn').addEventListener('click', unlinkBackupFile);
+  if(dataStore.hasAutoBackup){
+    row.innerHTML = '<span class="auto-backup-status">🔗 ' + escapeHtml(dataStore.autoBackupFileName) + '</span>' +
+      '<button id="disable-auto-backup-btn">' + t('disableAutoBackupBtn') + '</button>';
+    document.getElementById('disable-auto-backup-btn').addEventListener('click', disableAutoBackup);
   }else{
-    row.innerHTML = '<button id="link-btn">' + t('linkBtn') + '</button>';
-    document.getElementById('link-btn').addEventListener('click', linkBackupFile);
+    row.innerHTML = '<button id="enable-auto-backup-btn">' + t('enableAutoBackupBtn') + '</button>';
+    document.getElementById('enable-auto-backup-btn').addEventListener('click', enableAutoBackup);
   }
 }
 
-async function tryRestoreLinkedHandle(){
-  if(!supportsFSA) return;
-  try{
-    const handle = await idbGet('backup-handle');
-    if(handle){
-      const perm = await handle.queryPermission({ mode: 'readwrite' });
-      if(perm === 'granted' || perm === 'prompt') linkedFileHandle = handle;
-    }
-  }catch(e){ /* no linked file */ }
-  renderLinkRow();
+async function tryRestoreAutoBackupHandle(){
+  await dataStore.restoreAutoBackupHandle();
+  renderAutoBackupRow();
 }
 
 document.getElementById('help-btn').addEventListener('click', () => {
@@ -842,7 +929,7 @@ document.getElementById('help-close').addEventListener('click', () => {
 
 document.getElementById('history-btn').addEventListener('click', async () => {
   await renderHistoryPanel();
-  renderLinkRow();
+  renderAutoBackupRow();
   document.querySelectorAll('.hist-tab').forEach(t => t.classList.remove('active'));
   document.querySelector('.hist-tab[data-view="list"]').classList.add('active');
   document.getElementById('history-list').style.display = 'block';
@@ -857,117 +944,117 @@ document.querySelectorAll('.hist-tab').forEach(tab => {
     const view = tab.getAttribute('data-view');
     document.getElementById('history-list').style.display = (view === 'list') ? 'block' : 'none';
     document.getElementById('history-chart-view').style.display = (view === 'chart') ? 'block' : 'none';
-    if(view === 'chart') await renderEvolutionChart();
+    if(view === 'chart') await evolutionPane.render();
   });
 });
 
-// --- trends chart model (pure, testable) --------------------------------
-// Computes what the "Trends" line chart should show — one series per
-// outcome, each a list of {index, percentage} points in chronological
-// order — with no Canvas involved. renderEvolutionChart() below only
-// paints whatever this returns.
-function getEvolutionSeries(historyList){
-  const chrono = historyList.slice().reverse(); // oldest to newest
-  const sessionCount = chrono.length;
+// --- EvolutionPane: the "Trends" tab (model + the canvas it's painted to) ---
+class EvolutionPane {
+  computeSeries(historyList){
+    const chrono = historyList.slice().reverse(); // oldest to newest
+    const sessionCount = chrono.length;
 
-  const series = ['first', 'second', 'fault'].map(key => ({
-    key,
-    color: colors[key],
-    points: chrono.map((session, index) => {
-      const total = session.first + session.second + session.fault;
-      return { index, percentage: pct(session[key], total) };
-    }),
-  }));
+    const series = ['first', 'second', 'fault'].map(key => ({
+      key,
+      color: colors[key],
+      points: chrono.map((session, index) => {
+        const total = session.first + session.second + session.fault;
+        return { index, percentage: percent(session[key], total) };
+      }),
+    }));
 
-  return { sessionCount, series };
-}
-
-// Draws the "Trends" line chart: one line per outcome (first/second/fault),
-// each session's percentage of its own total, oldest to newest left-to-right.
-async function renderEvolutionChart(){
-  const list = await loadHistoryList();
-  const canvas = document.getElementById('evo-chart');
-  const container = canvas.parentElement;
-  const w = Math.max(container.clientWidth - 4, 100);
-  const h = 180;
-  canvas.width = w;
-  canvas.height = h;
-  const c = canvas.getContext('2d');
-  c.clearRect(0, 0, w, h);
-
-  const { sessionCount, series } = getEvolutionSeries(list);
-
-  if(sessionCount === 0){
-    c.fillStyle = '#7C9285';
-    c.font = '13px Inter';
-    c.textAlign = 'center';
-    c.fillText(t('notEnoughSessions'), w/2, h/2);
-    return;
+    return { sessionCount, series };
   }
 
-  const pad = { top: 12, right: 10, bottom: 10, left: 30 };
-  const plotW = w - pad.left - pad.right;
-  const plotH = h - pad.top - pad.bottom;
+  // Draws one line per outcome (first/second/fault), each session's
+  // percentage of its own total, oldest to newest left-to-right.
+  async render(){
+    const list = await dataStore.loadHistory();
+    const canvas = document.getElementById('evo-chart');
+    const container = canvas.parentElement;
+    const w = Math.max(container.clientWidth - 4, 100);
+    const h = 180;
+    canvas.width = w;
+    canvas.height = h;
+    const c = canvas.getContext('2d');
+    c.clearRect(0, 0, w, h);
 
-  c.strokeStyle = '#2A4433';
-  c.fillStyle = '#7C9285';
-  c.font = '9px Inter';
-  c.textAlign = 'right';
-  c.lineWidth = 1;
-  [0, 25, 50, 75, 100].forEach(v => {
-    const y = pad.top + plotH - (v/100)*plotH;
-    c.beginPath();
-    c.moveTo(pad.left, y);
-    c.lineTo(w - pad.right, y);
-    c.stroke();
-    c.fillText(v + '%', pad.left - 4, y + 3);
-  });
+    const { sessionCount, series } = this.computeSeries(list);
 
-  const n = sessionCount;
-  const xAt = i => pad.left + (n === 1 ? plotW/2 : (i/(n-1)) * plotW);
-  const yAt = v => pad.top + plotH - (v/100) * plotH;
+    if(sessionCount === 0){
+      c.fillStyle = '#7C9285';
+      c.font = '13px Inter';
+      c.textAlign = 'center';
+      c.fillText(t('notEnoughSessions'), w/2, h/2);
+      return;
+    }
 
-  // draw order first/fault/second (not the array's own order) so the
-  // 2nd-serve line always ends up on top, easiest to misread if buried
-  const drawOrder = ['first', 'fault', 'second'];
-  drawOrder.forEach(key => {
-    const s = series.find(item => item.key === key);
-    c.lineJoin = 'round';
-    c.lineCap = 'round';
+    const pad = { top: 12, right: 10, bottom: 10, left: 30 };
+    const plotW = w - pad.left - pad.right;
+    const plotH = h - pad.top - pad.bottom;
 
-    // dark outline first, so each line reads clearly against the background and against other lines
-    c.strokeStyle = 'rgba(10,17,13,0.9)';
-    c.lineWidth = 4.5;
-    c.beginPath();
-    s.points.forEach((p, i) => {
-      const x = xAt(p.index), y = yAt(p.percentage);
-      if(i === 0) c.moveTo(x, y); else c.lineTo(x, y);
-    });
-    c.stroke();
-
-    // colored line drawn on top of the outline
-    c.strokeStyle = s.color;
-    c.lineWidth = 2.5;
-    c.beginPath();
-    s.points.forEach((p, i) => {
-      const x = xAt(p.index), y = yAt(p.percentage);
-      if(i === 0) c.moveTo(x, y); else c.lineTo(x, y);
-    });
-    c.stroke();
-
-    s.points.forEach((p) => {
-      const x = xAt(p.index), y = yAt(p.percentage);
+    c.strokeStyle = '#2A4433';
+    c.fillStyle = '#7C9285';
+    c.font = '9px Inter';
+    c.textAlign = 'right';
+    c.lineWidth = 1;
+    [0, 25, 50, 75, 100].forEach(v => {
+      const y = pad.top + plotH - (v/100)*plotH;
       c.beginPath();
-      c.arc(x, y, 3, 0, Math.PI*2);
-      c.fillStyle = 'rgba(10,17,13,0.9)';
-      c.fill();
-      c.beginPath();
-      c.arc(x, y, 2, 0, Math.PI*2);
-      c.fillStyle = s.color;
-      c.fill();
+      c.moveTo(pad.left, y);
+      c.lineTo(w - pad.right, y);
+      c.stroke();
+      c.fillText(v + '%', pad.left - 4, y + 3);
     });
-  });
+
+    const n = sessionCount;
+    const xAt = i => pad.left + (n === 1 ? plotW/2 : (i/(n-1)) * plotW);
+    const yAt = v => pad.top + plotH - (v/100) * plotH;
+
+    // draw order first/fault/second (not the array's own order) so the
+    // 2nd-serve line always ends up on top, easiest to misread if buried
+    const drawOrder = ['first', 'fault', 'second'];
+    drawOrder.forEach(key => {
+      const s = series.find(item => item.key === key);
+      c.lineJoin = 'round';
+      c.lineCap = 'round';
+
+      // dark outline first, so each line reads clearly against the background and against other lines
+      c.strokeStyle = 'rgba(10,17,13,0.9)';
+      c.lineWidth = 4.5;
+      c.beginPath();
+      s.points.forEach((p, i) => {
+        const x = xAt(p.index), y = yAt(p.percentage);
+        if(i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+      });
+      c.stroke();
+
+      // colored line drawn on top of the outline
+      c.strokeStyle = s.color;
+      c.lineWidth = 2.5;
+      c.beginPath();
+      s.points.forEach((p, i) => {
+        const x = xAt(p.index), y = yAt(p.percentage);
+        if(i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+      });
+      c.stroke();
+
+      s.points.forEach((p) => {
+        const x = xAt(p.index), y = yAt(p.percentage);
+        c.beginPath();
+        c.arc(x, y, 3, 0, Math.PI*2);
+        c.fillStyle = 'rgba(10,17,13,0.9)';
+        c.fill();
+        c.beginPath();
+        c.arc(x, y, 2, 0, Math.PI*2);
+        c.fillStyle = s.color;
+        c.fill();
+      });
+    });
+  }
 }
+
+const evolutionPane = new EvolutionPane();
 
 document.getElementById('history-close').addEventListener('click', () => {
   document.getElementById('history-overlay').classList.remove('open');
@@ -981,26 +1068,16 @@ document.getElementById('reset-btn').addEventListener('click', async () => {
     const name = prompt(t('saveSessionPrompt'), defaultSessionName());
     if(name !== null){
       await addSessionToHistory(name.trim() || defaultSessionName());
-      await writeBackupToLinkedFile();
+      await writeAutoBackup();
     }
   }
   state = { first:0, second:0, fault:0 };
-  render();
-  save();
+  renderCurrentTennisSession();
+  saveLatestTennisSession();
 });
 
-// --- manual backup (download) + export reminder ---------------------------
-// The Export button always works (downloads a .json), independent of
-// whether a file is linked via the File System Access API above.
-const EXPORT_DATE_KEY = 'last-export-date';
-
-async function doExport(){
-  const history = await loadHistoryList();
-  const backup = {
-    exportedAt: new Date().toISOString(),
-    currentSession: state,
-    history: history
-  };
+async function exportDB(){
+  const backup = await buildBackupObject();
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1016,8 +1093,8 @@ async function doExport(){
   // silently cancel a download in some browsers.
   setTimeout(async () => {
     URL.revokeObjectURL(url);
-    await writeBackupToLinkedFile();
-    try{ localStorage.setItem(EXPORT_DATE_KEY, new Date().toISOString()); }catch(e){}
+    await writeAutoBackup();
+    dataStore.recordExportNow();
     hideExportBanner();
   }, 300);
 }
@@ -1031,16 +1108,13 @@ function hideExportBanner(){
 async function checkExportReminder(){
   const history = await loadHistoryList();
   if(history.length === 0) return;
-  let lastExport = null;
-  try{ lastExport = localStorage.getItem(EXPORT_DATE_KEY); }catch(e){}
-  const daysSince = lastExport ? (Date.now() - new Date(lastExport).getTime()) / 86400000 : Infinity;
-  if(daysSince >= 7){
+  if(dataStore.daysSinceLastExport() >= 7){
     document.getElementById('export-banner').classList.add('show');
   }
 }
 
-document.getElementById('export-btn').addEventListener('click', doExport);
-document.getElementById('banner-export-btn').addEventListener('click', doExport);
+document.getElementById('export-btn').addEventListener('click', exportDB);
+document.getElementById('banner-export-btn').addEventListener('click', exportDB);
 document.getElementById('banner-dismiss-btn').addEventListener('click', hideExportBanner);
 
 document.getElementById('import-btn').addEventListener('click', () => {
@@ -1055,7 +1129,7 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
     const text = await file.text();
     const data = JSON.parse(text);
     if(!data || !Array.isArray(data.history) || typeof data.currentSession !== 'object'){
-      throw new Error('format invalide');
+      throw new Error('invalid format');
     }
     if(!confirm(t('importConfirm'))) return;
 
@@ -1064,9 +1138,9 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
       second: data.currentSession.second || 0,
       fault: data.currentSession.fault || 0
     };
-    await save();
+    await saveLatestTennisSession();
     await saveHistoryList(data.history);
-    render();
+    renderCurrentTennisSession();
     await renderHistoryPanel();
     alert(t('importSuccess'));
   }catch(err){
@@ -1074,10 +1148,10 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
   }
 });
 
-initLangSelector();
-load();
+populateUILanguageSelector();
+loadLatestTennisSession();
 checkExportReminder();
-tryRestoreLinkedHandle();
+tryRestoreAutoBackupHandle();
 </script>
 </body>
 </html>

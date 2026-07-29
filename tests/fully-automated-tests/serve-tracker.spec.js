@@ -1,4 +1,9 @@
 // @ts-check
+// Fully-automated tests: everything here runs headless with no human
+// involved (`npm test`). 
+// 
+// Tests that require visual confirmation by a human tester live 
+// separately in ../semi-automated-tests/.
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
@@ -58,8 +63,8 @@ test.describe('recording serves', () => {
 
 test.describe('donut chart model', () => {
   test('an empty session has no segments', async () => {
-    const { total, segments } = await app.computeChartSegmentsFor({ first: 0, second: 0, fault: 0 });
-    expect(total).toBe(0);
+    const { totalPoints, segments } = await app.computeChartSegmentsFor({ first: 0, second: 0, fault: 0 });
+    expect(totalPoints).toBe(0);
     expect(segments).toEqual([]);
   });
 
@@ -87,15 +92,15 @@ test.describe('donut chart model', () => {
     const { segments } = await app.computeChartSegmentsFor({ first: 5, second: 3, fault: 2 });
 
     // starts at 12 o'clock
-    expect(segments[0].startAngle).toBeCloseTo(-Math.PI / 2, 5);
+    expect(segments[0].startAngleRadians).toBeCloseTo(-Math.PI / 2, 5);
 
     // each segment picks up exactly where the previous one ended
     for (let i = 1; i < segments.length; i++) {
-      expect(segments[i].startAngle).toBeCloseTo(segments[i - 1].endAngle, 5);
+      expect(segments[i].startAngleRadians).toBeCloseTo(segments[i - 1].endAngleRadians, 5);
     }
 
     // the whole ring sweeps exactly 360 degrees (2*PI), no gaps or overlap
-    const totalSweep = segments.reduce((sum, s) => sum + (s.endAngle - s.startAngle), 0);
+    const totalSweep = segments.reduce((sum, s) => sum + (s.endAngleRadians - s.startAngleRadians), 0);
     expect(totalSweep).toBeCloseTo(Math.PI * 2, 5);
   });
 
@@ -103,8 +108,8 @@ test.describe('donut chart model', () => {
     await app.registerSuccessfulFirstServes(1);
     await app.registerDoubleFaults(1);
 
-    const { total, segments } = await app.getCurrentChartSegments();
-    expect(total).toBe(2);
+    const { totalPoints, segments } = await app.getCurrentChartSegments();
+    expect(totalPoints).toBe(2);
     expect(segments.map(s => s.key)).toEqual(['first', 'fault']);
     expect(segments.map(s => s.percentage)).toEqual([50, 50]);
   });
