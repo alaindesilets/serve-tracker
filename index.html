@@ -81,6 +81,30 @@
     background:none; border:none; color:var(--muted); font-size:14px; padding:2px 4px;
   }
 
+ /* "New version available" banner.
+
+   Doesn't appear during normal use — only when the browser already has an
+   older cached version of the app (from a previous visit) and a newer
+   version has since been deployed. 
+   
+   Requires HTTPS; so never appears when opened via file://, since service 
+   workers need a secure context to run at all.
+
+   As a consequence, doesn't show up on a normal test run either, since the 
+   test suite loads the app via file://. */
+
+  #update-banner{
+    display:none; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--surface-2); border-radius:14px; padding:9px 12px;
+    margin-bottom:8px; font-size:11px; color:var(--line);
+  }
+  #update-banner.show{ display:flex; }
+  #update-reload-btn{
+    background:var(--first); color:#14231A; border:none;
+    font-family:'Inter',sans-serif; font-weight:600; font-size:11px;
+    padding:5px 10px; border-radius:12px; text-transform:uppercase;
+  }
+
   #history-overlay, #help-overlay{
     display:none; position:fixed; inset:0; background:rgba(10,17,13,0.88);
     z-index:10; padding:14px;
@@ -242,6 +266,13 @@
     </div>
   </div>
 
+  <!-- Shown by AppUpdater when a new service worker version is installed
+       and waiting to take over -->
+  <div id="update-banner">
+    <span data-i18n="updateAvailable">A new version is available.</span>
+    <button id="update-reload-btn" data-i18n="updateBtn">Update</button>
+  </div>
+
   <!-- Help overlay: static instructions panel, opened via the "?" button -->
   <div id="help-overlay">
     <div id="help-panel">
@@ -367,6 +398,8 @@ const translations = {
     importSuccess: 'Données restaurées avec succès.',
     importError: "Ce fichier n'est pas une sauvegarde valide.",
     exportReminder: 'Pense à exporter tes données de temps en temps.',
+    updateAvailable: 'Une nouvelle version est disponible.',
+    updateBtn: 'Mettre à jour',
     enableAutoBackupBtn: 'Activer la sauvegarde automatique',
     disableAutoBackupBtn: 'Désactiver',
     linkFailed: "Impossible de lier ce fichier.",
@@ -424,6 +457,8 @@ const translations = {
     importSuccess: 'Data restored successfully.',
     importError: 'This file is not a valid backup.',
     exportReminder: 'Consider exporting your data once in a while.',
+    updateAvailable: 'A new version is available.',
+    updateBtn: 'Update',
     enableAutoBackupBtn: 'Turn on auto-backup',
     disableAutoBackupBtn: 'Turn off',
     linkFailed: 'Could not link this file.',
@@ -1148,10 +1183,60 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
   }
 });
 
+// --- AppUpdater: registers service-worker.js and drives the "new version
+// available" banner. Doesn't run over file:// or in browsers without the
+// API — the app just keeps loading over the network each time in that
+// case, same as before this existed.
+class AppUpdater {
+  async register(){
+    if(!('serviceWorker' in navigator) || !window.isSecureContext) return;
+    try{
+      this.registration = await navigator.serviceWorker.register('service-worker.js');
+      this.registration.addEventListener('updatefound', () => this._onUpdateFound());
+      navigator.serviceWorker.addEventListener('controllerchange', () => this._onControllerChange());
+    }catch(e){
+      // registration failed — app still works, just without offline support
+    }
+  }
+
+  _onUpdateFound(){
+    const newWorker = this.registration.installing;
+    if(!newWorker) return;
+    newWorker.addEventListener('statechange', () => {
+      // navigator.serviceWorker.controller is only set once a previous
+      // version already controls the page — i.e. this is an update, not
+      // the very first install, which needs no banner.
+      if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+        renderUpdateBanner(newWorker);
+      }
+    });
+  }
+
+  _onControllerChange(){
+    if(this._reloadedForUpdate) return;
+    this._reloadedForUpdate = true;
+    window.location.reload();
+  }
+
+  applyUpdate(waitingWorker){
+    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+  }
+}
+
+const appUpdater = new AppUpdater();
+
+function renderUpdateBanner(waitingWorker){
+  document.getElementById('update-banner').classList.add('show');
+  document.getElementById('update-reload-btn').addEventListener('click', () => {
+    appUpdater.applyUpdate(waitingWorker);
+  }, { once: true });
+}
+
 populateUILanguageSelector();
 loadLatestTennisSession();
 checkExportReminder();
 tryRestoreAutoBackupHandle();
+appUpdater.register();
 </script>
 </body>
 </html>
