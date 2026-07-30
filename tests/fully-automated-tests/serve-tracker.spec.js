@@ -24,29 +24,23 @@ test.beforeEach(async ({ page }) => {
 
 test.describe('initial state', () => {
   test('loads with all counters at zero', async () => {
-    expect(await app.getTotalPoints()).toBe(0);
-    expect(await app.getFirstServeCount()).toBe(0);
-    expect(await app.getSecondServeCount()).toBe(0);
-    expect(await app.getDoubleFaultCount()).toBe(0);
+    await app.expectCountsToBe({});
   });
 });
 
 test.describe('recording serves', () => {
   test('each outcome increments its own counter and the total', async () => {
     await app.registerSuccessfulFirstServes(1);
-    expect(await app.getFirstServeCount()).toBe(1);
-    expect(await app.getTotalPoints()).toBe(1);
+    await app.expectCountsToBe({ first: 1 });
 
     await app.registerSuccessfulSecondServes(1);
     await app.registerDoubleFaults(1);
-    expect(await app.getTotalPoints()).toBe(3);
+    await app.expectCountsToBe({ first: 1, second: 1, fault: 1 });
   });
 
   test('percentages reflect the split between the three outcomes', async () => {
     // 2 first-serve-in, 1 second-serve-in, 1 double-fault -> 50/25/25
-    await app.registerSuccessfulFirstServes(2);
-    await app.registerSuccessfulSecondServes(1);
-    await app.registerDoubleFaults(1);
+    await app.registerServes({ first: 2, second: 1, fault: 1 });
 
     expect(await app.getFirstServePercentage()).toBe(50);
     expect(await app.getSecondServePercentage()).toBe(25);
@@ -54,8 +48,7 @@ test.describe('recording serves', () => {
   });
 
   test('counts survive a page reload', async () => {
-    await app.registerSuccessfulFirstServes(1);
-    await app.registerDoubleFaults(1);
+    await app.registerServes({ first: 1, fault: 1 });
     await app.reload();
     expect(await app.getTotalPoints()).toBe(2);
   });
@@ -105,8 +98,7 @@ test.describe('donut chart model', () => {
   });
 
   test('reflects whatever is actually on screen after tapping buttons', async () => {
-    await app.registerSuccessfulFirstServes(1);
-    await app.registerDoubleFaults(1);
+    await app.registerServes({ first: 1, fault: 1 });
 
     const { totalPoints, segments } = await app.getCurrentChartSegments();
     expect(totalPoints).toBe(2);
@@ -117,8 +109,7 @@ test.describe('donut chart model', () => {
 
 test.describe('ending a practice session', () => {
   test('declining to save still clears the counters, and keeps no record', async () => {
-    await app.registerSuccessfulFirstServes(1);
-    await app.registerDoubleFaults(1);
+    await app.registerServes({ first: 1, fault: 1 });
 
     await app.endSessionWithoutSaving();
     expect(await app.getTotalPoints()).toBe(0);
@@ -128,8 +119,7 @@ test.describe('ending a practice session', () => {
   });
 
   test('saving archives the session under the given name', async () => {
-    await app.registerSuccessfulFirstServes(1);
-    await app.registerSuccessfulSecondServes(1);
+    await app.registerServes({ first: 1, second: 1 });
 
     await app.endSessionAndSave('Practice A');
     expect(await app.getTotalPoints()).toBe(0); // counters cleared either way
@@ -163,6 +153,79 @@ test.describe('session history', () => {
     await app.openHistory();
     await app.viewTrends();
     expect(await app.isTrendsChartVisible()).toBe(true);
+  });
+
+  test('opening and closing History does not lose the in-progress session', async () => {
+    await app.registerServes({ first: 2, second: 1, fault: 1 });
+
+    await app.openHistory();
+    await app.closeHistory();
+
+    await app.expectCountsToBe({ first: 2, second: 1, fault: 1 });
+
+    await app.endSessionAndSave('Checked session');
+
+    await app.openHistory();
+    expect(await app.getSavedSessionStats('Checked session')).toEqual({
+      total: 4,
+      firstPercentage: 50,
+      secondPercentage: 25,
+      faultPercentage: 25,
+    });
+  });
+
+  test('each saved session displays its own stats, not mixed up with another', async () => {
+    await app.registerServes({ first: 3, fault: 1 });
+    await app.endSessionAndSave('Session A');
+
+    await app.registerServes({ second: 1, fault: 1 });
+    await app.endSessionAndSave('Session B');
+
+    await app.openHistory();
+
+    expect(await app.getSavedSessionStats('Session A')).toEqual({
+      total: 4,
+      firstPercentage: 75,
+      secondPercentage: 0,
+      faultPercentage: 25,
+    });
+
+    expect(await app.getSavedSessionStats('Session B')).toEqual({
+      total: 2,
+      firstPercentage: 0,
+      secondPercentage: 50,
+      faultPercentage: 50,
+    });
+  });
+
+  test('Clear All, once confirmed, deletes every saved session', async () => {
+    await app.registerServes({ first: 1 });
+    await app.endSessionAndSave('Session A');
+
+    await app.registerServes({ second: 1 });
+    await app.endSessionAndSave('Session B');
+
+    await app.openHistory();
+    expect(await app.getSavedSessionNames()).toEqual(['Session B', 'Session A']);
+
+    await app.clearAllHistory();
+
+    expect(await app.hasNoSavedSessions()).toBe(true);
+  });
+
+  test('Clear All, if cancelled, leaves the saved history untouched', async () => {
+    await app.registerServes({ first: 1 });
+    await app.endSessionAndSave('Session A');
+
+    await app.registerServes({ second: 1 });
+    await app.endSessionAndSave('Session B');
+
+    await app.openHistory();
+    expect(await app.getSavedSessionNames()).toEqual(['Session B', 'Session A']);
+
+    await app.clearAllHistoryButCancel();
+
+    expect(await app.getSavedSessionNames()).toEqual(['Session B', 'Session A']);
   });
 });
 
@@ -207,15 +270,17 @@ test.describe('trends chart model', () => {
 
   test('reflects real saved sessions, oldest to newest', async () => {
     await app.registerSuccessfulFirstServes(1);
-    await app.endSessionAndSave('First saved');
+    await app.endSessionAndSave('AAA First saved');
 
-    await app.registerSuccessfulFirstServes(1);
-    await app.registerDoubleFaults(1);
-    await app.endSessionAndSave('Second saved');
+    await app.registerServes({ first: 1, fault: 1 });
+    await app.endSessionAndSave('BBB Second saved');
 
     await app.openHistory();
     const list = await app.getSavedSessionNames(); // sanity: both are there
-    expect(list).toEqual(['Second saved', 'First saved']); // newest-first in the UI
+
+    // Notice how the sessions appear most recent first, eventhough the alphabetical 
+    // order would be the other way around
+    expect(list).toEqual(['BBB Second saved', 'AAA First saved']);
 
     const { sessionCount } = await app.getCurrentEvolutionSeries();
     expect(sessionCount).toBe(2);

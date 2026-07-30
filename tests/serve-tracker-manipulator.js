@@ -44,6 +44,17 @@ class ServeTrackerManipulator {
     for (let i = 0; i < n; i++) await this.page.click('#btn-fault');
   }
 
+  /**
+   * Registers a full set of serves in one call, e.g.
+   * `registerServes({ first: 2, second: 1, fault: 1 })`. Any outcome left
+   * out defaults to zero.
+   */
+  async registerServes({ first = 0, second = 0, fault = 0 } = {}) {
+    await this.registerSuccessfulFirstServes(first);
+    await this.registerSuccessfulSecondServes(second);
+    await this.registerDoubleFaults(fault);
+  }
+
   // --- reading the current session's stats ------------------------------
 
   async getTotalPoints() {
@@ -60,6 +71,20 @@ class ServeTrackerManipulator {
 
   async getDoubleFaultCount() {
     return Number(await this.page.locator('#c-fault').textContent());
+  }
+
+  /**
+   * Asserts the current session's counts match exactly, e.g.
+   * `expectCountsToBe({ first: 2, second: 1, fault: 1 })`. Any outcome
+   * left out defaults to zero; `total` defaults to the sum of the three,
+   * but can be overridden to check a mismatch.
+   * @param {{ first?: number, second?: number, fault?: number, total?: number }} counts
+   */
+  async expectCountsToBe({ first = 0, second = 0, fault = 0, total = first + second + fault } = {}) {
+    expect(await this.getFirstServeCount()).toBe(first);
+    expect(await this.getSecondServeCount()).toBe(second);
+    expect(await this.getDoubleFaultCount()).toBe(fault);
+    expect(await this.getTotalPoints()).toBe(total);
   }
 
   async getFirstServePercentage() {
@@ -204,6 +229,10 @@ class ServeTrackerManipulator {
     await this.page.click('#history-btn');
   }
 
+  async closeHistory() {
+    await this.page.click('#history-close');
+  }
+
   async viewSessionList() {
     await this.page.click('.hist-tab[data-view="list"]');
   }
@@ -224,11 +253,41 @@ class ServeTrackerManipulator {
     return this.page.locator('.hist-empty').isVisible();
   }
 
+  /**
+   * Reads the total points and per-outcome percentages displayed for the
+   * saved session matching this exact name, in the List tab.
+   * @param {string} name
+   */
+  async getSavedSessionStats(name) {
+    const text = await this.page.locator('.hist-item', { hasText: name }).locator('.hist-stats').textContent();
+    const match = /(\d+)\s*pts(\d+)%\s*\/\s*(\d+)%\s*\/\s*(\d+)%/.exec(text || '');
+    if (!match) return null;
+    const [, total, firstPercentage, secondPercentage, faultPercentage] = match;
+    return {
+      total: Number(total),
+      firstPercentage: Number(firstPercentage),
+      secondPercentage: Number(secondPercentage),
+      faultPercentage: Number(faultPercentage),
+    };
+  }
+
   /** Deletes the first saved session matching this exact name. */
   async deleteSavedSession(name) {
     const item = this.page.locator('.hist-item', { hasText: name });
     this.page.once('dialog', (dialog) => dialog.accept());
     await item.locator('.hist-delete').click();
+  }
+
+  /** Clicks Clear All and confirms, deleting the entire saved history. */
+  async clearAllHistory() {
+    this.page.once('dialog', (dialog) => dialog.accept());
+    await this.page.click('#clear-history-btn');
+  }
+
+  /** Clicks Clear All but cancels the confirmation, leaving history untouched. */
+  async clearAllHistoryButCancel() {
+    this.page.once('dialog', (dialog) => dialog.dismiss());
+    await this.page.click('#clear-history-btn');
   }
 
   async isTrendsChartVisible() {

@@ -167,6 +167,13 @@
   #export-btn{ margin-left:auto; }
   #export-btn:active, #import-btn:active{ background:var(--surface-2); color:var(--line); }
 
+  #clear-history-btn{
+    background:none; border:1px solid var(--fault); color:var(--fault);
+    font-family:'Inter',sans-serif; font-size:11px; letter-spacing:0.03em;
+    padding:6px 12px; border-radius:16px; text-transform:uppercase;
+  }
+  #clear-history-btn:active{ background:var(--fault); color:#F5E9E6; }
+
   #auto-backup-row{
     display:none; align-items:center; justify-content:space-between; gap:8px;
     margin:10px 16px 0; padding:8px 10px; background:var(--surface-2); border-radius:12px;
@@ -298,6 +305,7 @@
         <button class="hist-tab" data-view="chart" data-i18n="tabChart">Trends</button>
         <button id="export-btn" data-i18n="exportBtn">Export</button>
         <button id="import-btn" data-i18n="importBtn">Import</button>
+        <button id="clear-history-btn" data-i18n="clearAllBtn">Clear All</button>
         <input type="file" id="import-file" accept="application/json" style="display:none;">
       </div>
       <!-- File System Access auto-backup control, filled in by
@@ -394,6 +402,8 @@ const translations = {
     pts: 'pts',
     exportBtn: 'Exporter',
     importBtn: 'Importer',
+    clearAllBtn: 'Tout effacer',
+    clearAllConfirm: "Supprimer tout l'historique des sessions ? Cette action est irréversible.",
     importConfirm: 'Remplacer les données actuelles par celles de ce fichier ?',
     importSuccess: 'Données restaurées avec succès.',
     importError: "Ce fichier n'est pas une sauvegarde valide.",
@@ -453,6 +463,8 @@ const translations = {
     pts: 'pts',
     exportBtn: 'Export',
     importBtn: 'Import',
+    clearAllBtn: 'Clear All',
+    clearAllConfirm: 'Delete all session history? This cannot be undone.',
     importConfirm: 'Replace current data with this file\'s data?',
     importSuccess: 'Data restored successfully.',
     importError: 'This file is not a valid backup.',
@@ -722,6 +734,10 @@ class DataStore {
       fault: state.fault,
     });
     await this.saveHistory(list);
+  }
+
+  async clearHistory(){
+    await this.saveHistory([]);
   }
 
   // --- backup object: shared by both exportDB() (manual download) and
@@ -1181,6 +1197,12 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
   }catch(err){
     alert(t('importError'));
   }
+});
+
+document.getElementById('clear-history-btn').addEventListener('click', async () => {
+  if(!confirm(t('clearAllConfirm'))) return;
+  await dataStore.clearHistory();
+  await renderHistoryPanel();
 });
 
 // --- AppUpdater: registers service-worker.js and drives the "new version

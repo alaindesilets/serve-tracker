@@ -70,15 +70,18 @@ For example:
   that naming pattern itself is a signal to extract a class named after
   that concept — see `DataStore`, `DonutChart`, `EvolutionPane`.
 
-### Use Page Manipulators when writing tests
+### On Automated Tests
 
 - When writing tests, avoid explicitly refering to the HTML elements. Instead, implement a Page Manipulator class, and implement helper methods that allow the tests to manipulate the page, and check some things about its current state.
   - See class ServeTrackerManipulator for an example.
   - Note how we call this a Page Manipulator instead of the more standard Page Object. We find Page Object sounds too much like the model in a MVC pattern (and this is not the same thing)
-- Test-first: tests are written by the project owner, before the
-  implementation, on purpose — never let an AI write both the code and
-  the test that validates it. Don't modify an existing test to make it
-  pass without flagging that explicitly first.
+- Make sure to write automated or semi-automated tests for every new behavior 
+    that you code. When you fix a bug, start by writing a test that fails (because 
+    of that bug), then fix the bug. That way we are sure  the bug won't reappear 
+    later.
+- The human's role shifts from sole author of the code and tests to
+    curator of what the AI produces. Whenever you create or modify tests,
+    ask the human to scrutinize them carefully.
 
 ### English is the coding language  
 - All dev-facing text (comments, test names, semi-automated test
